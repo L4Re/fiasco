@@ -259,6 +259,13 @@ public:
     return Cpu::rdmsr(Msr::Ia32_bios_sign_id) >> 32;
   }
 
+  static Unsigned64 get_bios_sign_id()
+  {
+    Cpu::wrmsr(0, Msr::Ia32_bios_sign_id);
+    Unsigned32 a = Cpu::cpuid_eax(1);
+    return (Cpu::rdmsr(Msr::Ia32_bios_sign_id) & 0xffffffff'00000000) | a;
+  }
+
 private:
   void init_lbr_type();
   void init_bts_type();
@@ -338,8 +345,7 @@ struct Ia32_intel_microcode
 
     Unsigned32 total_size() const
     {
-      static_assert (sizeof(Header) == 48,
-                     "invalid size for microcode header");
+      static_assert(sizeof(Header) == 48);
       return _data_size ? _total_size : 2048;
     }
 
@@ -360,11 +366,10 @@ struct Ia32_intel_microcode
 
     bool match_proc(Unsigned32 sig, Unsigned32 proc_mask) const
     {
-      if ((sig == signature)
-          && (processor_flags & proc_mask))
+      if (sig == signature && (processor_flags & proc_mask))
         return true;
 
-      if (total_size() <= (data_size() + 48 + 20))
+      if (total_size() <= data_size() + sizeof(Header) + 20)
         return false;
 
       auto *et = offset_cast<Ext_signature_table const *>(this + 1, data_size());
@@ -373,11 +378,8 @@ struct Ia32_intel_microcode
         return false;
 
       for (auto const *e = et->sig; e != et->sig + et->count; ++e)
-        {
-          if ((e->signature == sig)
-              && (e->processor_flags & proc_mask))
-            return true;
-        }
+        if (e->signature == sig && (e->processor_flags & proc_mask))
+          return true;
 
       return false;
     }
@@ -418,7 +420,7 @@ struct Ia32_intel_microcode
 
     while (pos
            && (pos < ia32_intel_microcode_end)
-           && (pos + 48 < ia32_intel_microcode_end))
+           && (pos + sizeof(Header) < ia32_intel_microcode_end))
       {
         auto const *u = reinterpret_cast<Header const *>(pos);
         unsigned ts = u->total_size();
@@ -459,7 +461,7 @@ struct Ia32_intel_microcode
 
   static bool load()
   {
-    Unsigned64 rev_sig = get_sig();
+    Unsigned64 rev_sig = Cpu::get_bios_sign_id();
     auto const *update = find(rev_sig);
     if (!update)
       return false;
@@ -472,21 +474,21 @@ struct Ia32_intel_microcode
                    Msr::Ia32_bios_updt_trig);
       }
 
-    Unsigned64 n = get_sig();
-    if (rev_sig != n)
+    Unsigned64 n = Cpu::get_bios_sign_id();
+    Unsigned32 cpu_id = cxx::int_value<Cpu_phys_id>(Proc::cpu_id());
+
+    if (rev_sig == n)
       {
-        printf("microcode update: rev %llx -> %llx (%04x-%02x-%02x)\n",
-               rev_sig >> 32, n >> 32, update->date_year, update->date_month,
-               update->date_day);
-      }
-    else
-      {
-        printf("error: could not load microcode update: rev %llx != %llx"
-               " (%04x-%02x-%02x)\n",
-               rev_sig, n, update->date_year, update->date_month,
-               update->date_day);
+        WARNX(Error,
+              "microcode not updated for CPU %x: Have rev %llx/%08llx (%04x-%02x-%02x)\n",
+              cpu_id, rev_sig >> 32, rev_sig,
+              update->date_year, update->date_month, update->date_day);
         return false;
       }
+
+    printf("successful microcode update for CPU %x: rev %llx -> %llx (%04x-%02x-%02x)\n",
+           cpu_id, rev_sig >> 32, n >> 32,
+           update->date_year, update->date_month, update->date_day);
     return true;
   }
 };
