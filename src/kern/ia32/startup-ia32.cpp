@@ -10,6 +10,7 @@ IMPLEMENTATION[ia32 || amd64]:
 #include "boot_info.h"
 #include "config.h"
 #include "cpu.h"
+#include "cpu_ucode_mods.h"
 #include "fpu.h"
 #include "idt.h"
 #include "initcalls.h"
@@ -56,10 +57,14 @@ Startup::stage2()
   Kip_init::init();
   Kmem_alloc::init();
 
-  Cpu::cpus.cpu(Cpu_number::boot_cpu()).identify(false);
+  // Don't update microcode before the final paging was set up and before the
+  // microcode modules were mapped.
+  Cpu::cpus.cpu(Cpu_number::boot_cpu()).identify(/*update_ucode=*/false,
+                                                 /*verbose=*/false);
   // initialize initial page tables (also used for other CPUs later)
   Mem_space::init_page_sizes();
   Kmem::init_mmu();
+  Cpu_ucode_mods::init();
 
   // earliest point for the FB because of previous MMU setup
   Fb_console::init();

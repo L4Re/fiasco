@@ -32,6 +32,7 @@ public:
   {
     Arch_acpi_tables = 3,
     Arch_acpi_nvs = 4,
+    Arch_cpu_fw = 5
   };
 
 private:

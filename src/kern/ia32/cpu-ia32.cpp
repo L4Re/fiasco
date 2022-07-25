@@ -8,6 +8,7 @@ INTERFACE[ia32 || amd64]:
 #include "msrdefs.h"
 #include "regdefs.h"
 #include "per_cpu_data.h"
+#include "cxx/static_vector"
 
 #define FIASCO_IA32_LOAD_SEG_SAFE(seg, val) \
   asm volatile ("mov %0, %%" #seg : : "rm"(val))
@@ -50,6 +51,17 @@ public:
     Lf_rdpmc32          = 1U << 1,  // supports RDPMC32 instruction
     Lf_tsc_invariant    = 1U << 2,  // TSC runs at constant rate and does not
                                     // stop in any ACPI state
+  };
+
+  enum
+  {
+    Max_mods = 8,
+  };
+
+  struct Ucode_mod
+  {
+    Address start;
+    size_t  size;
   };
 
   static Unsigned64 time_us();
@@ -271,6 +283,9 @@ private:
   void init_bts_type();
 
   Unsigned64 _suspend_tsc;
+
+  static Ucode_mod mods[Max_mods];
+  static unsigned num_mods;
 };
 
 //-----------------------------------------------------------------------------
@@ -293,6 +308,9 @@ IMPLEMENTATION[ia32 || amd64]:
 #include "spin_lock.h"
 #include "tss.h"
 #include "warn.h"
+
+Cpu::Ucode_mod Cpu::mods[Max_mods];
+unsigned Cpu::num_mods;
 
 struct Ia32_intel_microcode
 {
@@ -338,6 +356,9 @@ struct Ia32_intel_microcode
     Unsigned32 _total_size;
     char _reserved[12];
 
+    bool date_valid() const
+    { return date_year != 0 || date_month != 0 || date_day != 0; }
+
     Unsigned32 data_size() const
     { return _data_size ? _data_size : 2000; }
 
@@ -351,7 +372,6 @@ struct Ia32_intel_microcode
 
     bool checksum_valid() const
     {
-      // must be a multiple of 1 KiB
       if (total_size() & 0x3ff)
         return false;
 
@@ -401,57 +421,83 @@ struct Ia32_intel_microcode
     return (Cpu::rdmsr(Msr::Ia32_bios_sign_id) & 0xffffffff00000000) | a;
   }
 
-  static Header const *find(Unsigned64 rev_sig, bool verbose)
+  /**
+   * Compare the revision of a CPU firmware binary against the revision of
+   * earlier binary modules; update the information if the current firmware
+   * module has a newer revision.
+   *
+   * \param proc_mask  Platform ID extracted from IA32_PLATFORM_ID.
+   * \param pos        Start address of the CPU firmware binary.
+   * \param end        The first address following the CPU firmware binary.
+   * \param rev_sig    Microcode update signature for the current CPU.
+   * \param update     Pointer to microcode header. Will be updated with the
+   *                   current one if it's newer than the existing.
+   * \param verbose    If true, print additional warnings and information.
+   *                   Usually only for the boot CPU.
+   *
+   * A CPU firmware binary may contain several CPU firmware blobs.
+   *
+   * \note Each CPU firmware blob needs to be 16-byte aligned.
+   */
+  static void match_header(Unsigned32 proc_mask, Address pos, Address end,
+                           Unsigned64 rev_sig, Header const **update,
+                           bool verbose)
   {
-    // get platform ID from IA32_PLATFORM_ID msr
-    Unsigned32 proc_mask = 1U << ((Cpu::rdmsr(Msr::Ia32_platform_id) >> 50) & 0x7);
-
-    extern char const __attribute__((weak))ia32_intel_microcode_start[];
-    extern char const __attribute__((weak))ia32_intel_microcode_end[];
-    char const *pos = ia32_intel_microcode_start;
-
-    if (reinterpret_cast<Address>(pos) & 0xf)
+    if (pos & 0xf)
       {
         if (verbose)
-          WARN("microcode update @ %p misaligned, skipping module\n", pos);
-        return nullptr;
+          WARN("microcode update @ %lx misaligned, skipping module\n", pos);
+        return;
       }
 
-    Header const *update = nullptr;
-
-    while (pos
-           && (pos < ia32_intel_microcode_end)
-           && (pos + sizeof(Header) < ia32_intel_microcode_end))
+    while (pos && (pos < end) && (pos + sizeof(Header) < end))
       {
         auto const *u = reinterpret_cast<Header const *>(pos);
+
+        // A KIP memory region can contain merged firmware boot modules. The
+        // next module starts at the next 4K page boundary. The size of a
+        // firmware binary blob is always 1K-aligned. Bootstrap takes care to
+        // fill the space from the end of a firmware blob until the next page
+        // with zeros.
+        if (!u->date_valid() && u->_total_size == 0)
+          {
+            // Begin of 4K page but invalid header.
+            if (!cxx::get_lsb(pos, 12))
+              return;
+
+            // Apparently past last blob on this page. There might be more blobs
+            // starting at the next page.
+            pos = cxx::ceil_lsb(pos, 12);
+            continue;
+          }
+
         unsigned ts = u->total_size();
         if (ts & 0x3ff)
           {
             if (verbose)
-              WARN("microcode update @ %p: size %x invalid -- skipping module\n",
+              WARN("microcode update @ %lx: size %x invalid -- skipping module\n",
                    pos, ts);
-            return nullptr;
+            return;
           }
 
-        if (pos + ts > ia32_intel_microcode_end)
+        if (pos + ts > end)
           {
             if (verbose)
-              WARN("microcode update @ %p: truncated -- skipping module\n", pos);
-            return nullptr;
+              WARN("microcode update @ %lx: truncated -- skipping module\n", pos);
+            return;
           }
 
         if (u->loader_rev != 1)
           {
             if (verbose)
-              WARN("microcode update @ %p: unknown loader revision %x -- skipping\n",
+              WARN("microcode update @ %lx: unknown loader revision %x -- skipping\n",
                    pos, u->loader_rev);
-
             pos += ts;
             continue;
           }
 
         if (verbose)
-          printf("Microcode update @ %p: %04x-%02x-%02x, sig %08x, rev %08x.\n",
+          printf("Microcode update @ %lx: %04x-%02x-%02x, sig %08x, rev %08x.\n",
                  pos, u->date_year, u->date_month, u->date_day, u->signature,
                  u->update_rev);
 
@@ -460,18 +506,61 @@ struct Ia32_intel_microcode
             if (!u->checksum_valid())
               {
                 if (verbose)
-                  WARN("microcode update @ %p: checksum error -- skipping\n", pos);
+                  WARN("microcode update @ %lx: checksum error -- skipping\n",
+                       pos);
               }
-            else if (!update || update->update_rev < u->update_rev)
-              update = u;
+            else if (!*update || (*update)->update_rev < u->update_rev)
+              *update = u;
           }
 
         pos += ts;
       }
+  }
+
+  /**
+   * Go through the static 'intel_microcode.bin' module (if part of the binary)
+   * and all bootstrap-provided CPU firmware modules and find the newest blob
+   * suitable for this CPU.
+   *
+   * \param rev_sig  Microcode update signature for the current CPU.
+   * \param verbose  If true, print additional warnings and information.
+   *                 Usually only for the boot CPU.
+   *
+   * \return Firmware header of the blob with the newest firmware suitable for
+   *         the current CPU.
+   */
+  static Header const *find(Unsigned64 rev_sig, bool verbose)
+  {
+    Unsigned32 proc_mask = 1U << ((Cpu::rdmsr(Msr::Ia32_platform_id) >> 50) & 0x7);
+
+    // Static module: See boot/amd64/Makerules.BOOT.amd64 and kernel.amd64.ld.
+    extern char const __attribute__((weak))ia32_intel_microcode_start[];
+    extern char const __attribute__((weak))ia32_intel_microcode_end[];
+
+    Header const *update = nullptr;
+
+    if (ia32_intel_microcode_start)
+      match_header(proc_mask,
+                   reinterpret_cast<Address>(ia32_intel_microcode_start),
+                   reinterpret_cast<Address>(ia32_intel_microcode_end),
+                   rev_sig, &update, verbose);
+
+    for (auto &mod: Cpu::ucode_mods())
+      match_header(proc_mask, mod.start, mod.start + mod.size, rev_sig, &update,
+                   verbose);
 
     return update;
   }
 
+  /**
+   * Try to update the CPU microcode.
+   *
+   * \param verbose  If true, print additional warnings and information.
+   *                 Usually only for the boot CPU.
+   *
+   * \retval false  No firmware update found or failure during update.
+   * \retval true   Firmware successfully updated.
+   */
   static bool load(bool verbose)
   {
     Unsigned64 rev_sig = Cpu::get_bios_sign_id();
@@ -526,6 +615,24 @@ Cpu::reset_io_bitmap()
   _tss->_hw.ctx.iopb = Tss::Segment_limit + 1;
   _tss->_io_bitmap_revision = 0;
 }
+
+PUBLIC static
+bool
+Cpu::add_ucode_mod(Address start, size_t size)
+{
+  if (num_mods >= cxx::size(mods))
+    return false;
+
+  mods[num_mods].start = start;
+  mods[num_mods].size = size;
+  ++num_mods;
+  return true;
+}
+
+PUBLIC static inline
+cxx::static_vector<Cpu::Ucode_mod>
+Cpu::ucode_mods()
+{ return cxx::static_vector<Ucode_mod>(mods, num_mods); }
 
 DEFINE_PER_CPU_P(0) Per_cpu<Cpu> Cpu::cpus(Per_cpu_data::Cpu_num);
 Cpu *Cpu::_boot_cpu;
@@ -711,7 +818,7 @@ Cpu::get_features()
  */
 PUBLIC FIASCO_INIT_CPU
 void
-Cpu::identify(bool verbose)
+Cpu::identify(bool update_ucode, bool verbose)
 {
   Unsigned32 eflags = get_flags();
 
@@ -738,10 +845,14 @@ Cpu::identify(bool verbose)
 
       _vendor = static_cast<Cpu::Vendor>(i);
 
-      if (_vendor == Vendor_intel)
-        Ia32_intel_microcode::load(verbose);
+      if (update_ucode)
+        {
+          if (_vendor == Vendor_intel)
+            Ia32_intel_microcode::load(verbose);
 
-      init_indirect_branch_mitigation();
+          // This might require a microcode update!
+          init_indirect_branch_mitigation();
+        }
 
       max = cpuid_eax(0);
 
@@ -1313,7 +1424,7 @@ IMPLEMENT FIASCO_INIT_CPU
 void
 Cpu::init(Cpu_number cpu)
 {
-  identify(cpu == Cpu_number::boot_cpu());
+  identify(/*update_ucode=*/true, /*verbose=*/cpu == Cpu_number::boot_cpu());
 
   init_lbr_type();
   init_bts_type();
