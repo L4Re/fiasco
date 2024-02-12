@@ -1235,21 +1235,37 @@ Thread::migrate(Migration *info)
   cpu_lock.lock();
 }
 
+/**
+ * Set home CPU of thread to invalid CPU, dequeue from its old CPU's request
+ * queue and handle all pending DRQs for the thread.
+ *
+ * \pre Interrupts must be disabled.
+ * \pre Must only be executed by the thread itself.
+ */
 PRIVATE inline NOEXPORT
 void
 Thread::force_to_invalid_cpu()
 {
-  // make sure this thread really never runs again by migrating it
-  // to the 'invalid' CPU forcefully.
-  Queue &q = Context::_pending_rqq.current();
-
     {
+      // Make sure this thread really never runs again by migrating it to the
+      // 'invalid' CPU forcefully.
+      Queue &q = Context::_pending_rqq.cpu(home_cpu());
+
       auto g = lock_guard(q.q_lock());
       set_home_cpu(Cpu::invalid());
       if (_pending_rq.queued())
         q.dequeue(&_pending_rq);
     }
-  handle_drq();
+
+    {
+      // Now that the thread is on the invalid (offline) CPU: Need to hold the
+      // _pending_rqq lock of that CPU, otherwise someone else can concurrently
+      // execute DRQs to the following handle_drq(), also see its precondition.
+      Queue &q = Context::_pending_rqq.cpu(home_cpu()); // invalid_cpu()
+
+      auto g = lock_guard(q.q_lock());
+      handle_drq();
+    }
 }
 
 IMPLEMENT inline
