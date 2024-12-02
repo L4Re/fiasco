@@ -1407,13 +1407,14 @@ Cpu::try_enable_hw_performance_states(bool resume)
   // Package_Control (bit 42) = 0
   // Activity_Window (bits 41:32) = 0 (auto)
   // Energy_Performance_Preference (bits 31:24) = 0x80 (default)
-  // Desired_Performance (bits 23:16) = 0 (default)
+  // Desired_Performance (bits 23:16) = HIGHEST_PERFORMANCE(hwp_cap)
   // Maximum_Performance (bits 15:8) = HIGHEST_PERFORMANCE(hwp_cap)
-  // Minimum_Performance (bits 7:0) = LOWEST_PERFORMANCE(hwp_cap)
+  // Minimum_Performance (bits 7:0) = GUARANTEED_PERFORMANCE(hwp_cap)
   Unsigned64 request =
     0x80ULL << 24 |
-    (((hwp_caps >> HIGHEST_PERFORMANCE_SHIFT) & 0xff) << 8) |
-    ((hwp_caps >> LOWEST_PERFORMANCE_SHIFT) & 0xff);
+    (((hwp_caps >> HIGHEST_PERFORMANCE_SHIFT) & 0xff) << 16) |
+    (((hwp_caps >> HIGHEST_PERFORMANCE_SHIFT) & 0xff) << 8)  |
+     ((hwp_caps >> GUARANTEED_PERFORMANCE_SHIFT) & 0xff);
   wrmsr(request, Msr::Hwp_request);
 
   if (!resume && id() == Cpu_number::boot_cpu())
