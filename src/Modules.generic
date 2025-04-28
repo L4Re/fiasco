@@ -37,8 +37,8 @@ INTERFACES_KERNEL	:= cpu_mask rcupdate kobject_mapdb context_base pm \
 			   kmem kmem_alloc kmem_mmio slab_cache         \
 			   mem_layout kmem_slab switch_lock kip_init         \
 			   helping_lock cpu_lock timer timeout   \
-			   ipc_timeout timeslice_timeout per_cpu_data_alloc  \
-			   vcpu_host_regs                                    \
+			   ipc_timeout ipc_remote_timeout timeslice_timeout  \
+			   per_cpu_data_alloc vcpu_host_regs                 \
 			   vcpu kobject_helper icu_helper thread_state       \
 			   context sender receiver mem_unit factory cpu_call \
 			   ipc_sender thread thread_object syscalls          \

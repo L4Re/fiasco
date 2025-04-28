@@ -132,6 +132,7 @@ IMPLEMENTATION:
 
 #include "config.h"
 #include "cpu_lock.h"
+#include "ipc_remote_timeout.h"
 #include "ipc_timeout.h"
 #include "lock_guard.h"
 #include "logdefs.h"
@@ -1430,11 +1431,28 @@ Thread::Check_sender
 Thread::remote_handshake_receiver(L4_msg_tag const &tag, Thread *partner,
                                   bool have_receive, L4_timeout snd_t)
 {
+  IPC_remote_timeout remote_timeout;
+  if (snd_t.is_finite() && !snd_t.is_zero()) [[unlikely]]
+    {
+      Unsigned64 clock = Timer::system_clock();
+      Unsigned64 tval = snd_t.microsecs(clock, utcb().access(true));
+      // Timeout expired already -- give up
+      if (tval <= clock) [[unlikely]]
+        {
+          utcb().access()->error = L4_error::Timeout;
+          return Check_sender::Failed;
+        }
+
+      set_timeout(&remote_timeout, tval);
+    }
+
   Ipc_remote_request rq;
   rq.tag = tag;
   rq.have_rcv = have_receive;
   rq.partner = partner;
   rq.zero_timeout = snd_t.is_zero();
+  // Result in case DRQ gets aborted, will be overwritten if DRQ is executed.
+  rq.result = Check_sender::Failed;
 
   set_wait_queue(partner->sender_list());
 
