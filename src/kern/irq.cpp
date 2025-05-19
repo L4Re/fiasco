@@ -944,6 +944,20 @@ Irq_sender::handle_remote_hit(Context::Drq *, Context *target, void *arg)
   Irq_sender *irq = static_cast<Irq_sender *>(arg);
   irq->migrate(current_cpu());
 
+  // We don't need to hold the `_irq_lock` to read `_irq_thread`. If the target
+  // thread got unbound in the meantime, only the following two scenarios are
+  // possible:
+  // 1. The abort_send-DRQ (from `finish_replace_irq_thread()`) is executed after
+  //    this handle_remote_hit-DRQ, and thus will take care of aborting any IPC send
+  //    we might enqueue at the receiver.
+  // 2. The abort_send-DRQ was already executed before this
+  //    handle_remote_hit-DRQ, in which case the synchronization done by the
+  //    DRQ dispatch mechanism ensures that the change of `irq->_irq_thread`
+  //    is visible here.
+  //
+  // Thus we will never accidentally send to a target thread, for which the
+  // Irq_sender no longer holds a counted reference, which is the invariant we
+  // need to uphold to avoid working on a dangling pointer to a deleted thread.
   auto t = access_once(&irq->_irq_thread);
   if (t == target) [[likely]]
     {
