@@ -531,10 +531,16 @@ Thread::handle_kill_helper(Drq *src, Context *, void *)
 }
 
 /**
- * Kill this thread (actually the current thread).
+ * Kill this thread (must be the current thread).
+ *
+ * \pre Interrupts must be disabled.
+ * \pre Must only be executed by the thread itself, not as a DRQ.
+ *
+ * \note Expected to never return, so the thread's stack must be disposable.
+ *       This means it must not contain anything that needs to be unwound/freed.
  */
 PRIVATE
-bool
+void
 Thread::do_kill()
 {
   // Since this function is executed as a continuation, interrupts should
@@ -636,7 +642,6 @@ Thread::do_kill()
   force_to_invalid_cpu();
   kernel_context_drq(handle_kill_helper, nullptr);
   kdb_ke("I'm dead");
-  return true;
 }
 
 INTERFACE:
