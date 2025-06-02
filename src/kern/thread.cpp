@@ -1253,8 +1253,16 @@ Thread::force_to_invalid_cpu()
 
       auto g = lock_guard(q.q_lock());
       set_home_cpu(Cpu::invalid());
+
       if (_pending_rq.queued())
         q.dequeue(&_pending_rq);
+
+      // Need to abort pending migration, if any, since we removed _pending_rq,
+      // so Context::Pending_rqq::handle_requests() would never notice the
+      // migration, making the initiator wait forever.
+      Migration *m = _migration;
+      if (m && cas<Migration *>(&_migration, m, nullptr))
+        write_now(&m->caller_may_return, true);
     }
 
     {
