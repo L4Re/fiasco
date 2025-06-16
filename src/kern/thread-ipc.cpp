@@ -640,7 +640,9 @@ Thread::do_ipc(L4_msg_tag const &tag, Mword from_spec, Thread *partner,
           // state of a remote sender.
           do_switch = false;
           _snd_regs = regs;
-          result = remote_handshake_receiver(tag, partner, have_receive, t.snd);
+          bool is_reply = regs->ref().op() & L4_obj_ref::Ipc_reply;
+          result = remote_handshake_receiver(tag, partner, have_receive, t.snd,
+                                             is_reply);
 
           // this may block, so we could have been migrated here
           current_cpu = ::current_cpu();
@@ -1429,21 +1431,39 @@ Thread::handle_remote_ipc_send(Drq *src, Context *, void *_rq)
 PRIVATE
 Thread::Check_sender
 Thread::remote_handshake_receiver(L4_msg_tag const &tag, Thread *partner,
-                                  bool have_receive, L4_timeout snd_t)
+                                  bool have_receive, L4_timeout snd_t,
+                                  bool is_reply)
 {
   IPC_remote_timeout remote_timeout;
-  if (snd_t.is_finite() && !snd_t.is_zero()) [[unlikely]]
+
+  // This is cross-core IPC, we use an eager DRQ by default when the receiver is
+  // ready to receive according to our heuristic.
+  auto receiver_ready = partner->sender_ok_heuristic(this).s
+                        != Rcv_state::Not_receiving;
+  bool eager = receiver_ready || is_reply; // reply can always be sent eagerly
+  if (!eager)
     {
-      Unsigned64 clock = Timer::system_clock();
-      Unsigned64 tval = snd_t.microsecs(clock, utcb().access(true));
-      // Timeout expired already -- give up
-      if (tval <= clock) [[unlikely]]
+      if (snd_t.is_zero())
         {
           utcb().access()->error = L4_error::Timeout;
+          // If the receiver is not ready, don't send a DRQ to avoid an IPI
+          // interfering with the target CPU.
           return Check_sender::Failed;
         }
 
-      set_timeout(&remote_timeout, tval);
+      if (snd_t.is_finite()) [[unlikely]]
+        {
+          Unsigned64 clock = Timer::system_clock();
+          Unsigned64 tval = snd_t.microsecs(clock, utcb().access(true));
+          // Timeout expired already -- give up
+          if (tval <= clock) [[unlikely]]
+            {
+              utcb().access()->error = L4_error::Timeout;
+              return Check_sender::Failed;
+            }
+
+          set_timeout(&remote_timeout, tval);
+        }
     }
 
   Ipc_remote_request rq;
@@ -1461,7 +1481,7 @@ Thread::remote_handshake_receiver(L4_msg_tag const &tag, Thread *partner,
   if (tag.transfer_fpu())
     spill_fpu_if_owner();
 
-  partner->drq(handle_remote_ipc_send, &rq);
+  partner->drq(handle_remote_ipc_send, &rq, Drq::Wait, eager);
 
   return rq.result;
 }

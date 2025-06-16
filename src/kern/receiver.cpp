@@ -599,6 +599,49 @@ Receiver::sender_ok(Sender *sender)
   return Rcv_state::Not_receiving;
 }
 
+/**
+ * Heuristically tests if the receiver might ready to receive a message from the
+ * given sender. May be called from any CPU, i.e. also from a CPU that is not
+ * the threads home CPU.
+ */
+PUBLIC inline NEEDS["std_macros.h", "thread_state.h", "sender.h"]
+Receiver::Rcv_state
+Receiver::sender_ok_heuristic(Sender const *sender) const
+{
+  unsigned receiver_state = state(false);
+  unsigned ipc_state = receiver_state & Thread_ipc_mask;
+
+  if (ipc_state != Thread_receive_wait) [[unlikely]]
+    {
+      // vCPU-enabled threads can receive IPC asynchronously, i.e. they don't
+      // need to be in Thread_receive_wait state. They must however not be
+      // already involved in an ongoing IPC operation.
+      if (ipc_state)
+        return Rcv_state::Not_receiving;
+
+      if (!(receiver_state & Thread_vcpu_enabled))
+        return Rcv_state::Not_receiving;
+
+      // vCPU state is kernel-user memory, it remains mapped as long as the
+      // receiver object exists (or rather the task it is bound to).
+      Vcpu_state *vcpu = vcpu_state().kern();
+      if (vcpu && (vcpu->state & Vcpu_state::F_irqs))
+        return Rcv_state::Irq_receive;
+
+      return Rcv_state::Not_receiving;
+    }
+
+  // Check open wait; test if there are no other senders already in the queue
+  if (!_partner && _sender_list.empty()) [[likely]]
+    return Rcv_state::Ipc_open_wait;
+
+  // Check closed wait; test if this sender is really who we specified
+  if (sender == _partner) [[likely]]
+    return Rcv_state::Ipc_receive;
+
+  return Rcv_state::Not_receiving;
+}
+
 //-----------------------------------------------------------------------------
 // VCPU code:
 
