@@ -1471,7 +1471,12 @@ Context::handle_drq()
     }
 
   if (!drq_pending()) [[likely]]
-    return resched;
+    {
+      // Always clear Thread_drq_ready, even if no DRQ is pending, because it
+      // might still be set if a DRQ was aborted.
+      state_del_dirty(Thread_drq_ready);
+      return resched;
+    }
 
   Mem::barrier();
   resched |= _drq_q.handle_requests();
@@ -1717,6 +1722,45 @@ void
 Context::drq(Drq::Request_func *func, void *arg,
              Drq::Wait_mode wait = Drq::Wait)
 { return drq(&current()->_drq, func, arg, wait); }
+
+/**
+ * Abort a DRQ initiated by this context.
+ *
+ * Check if the DRQ item of this context, the DRQ sender, is still enqueued
+ * in the DRQ queue of another context, the receiver. If yes, abort the DRQ by
+ * dequeuing the DRQ item from the queue of the receiver.
+ *
+ * \return true if DRQ was aborted, false otherwise.
+ */
+PUBLIC
+bool
+Context::abort_drq()
+{
+  // First check if our DRQ item is still queued, because `Queue::dequeue()`
+  // does not reset the queue pointer of Queue_item.
+  if (!_drq.queued())
+    return false;
+
+  // We enqueued the DRQ item in the receiver's DRQ queue. So if we observe that
+  // it is still enqueued, even heuristically without holding the queue's lock,
+  // we know that at least the receiver is still alive and thus it is safe to
+  // try to dequeue the DRQ from its DRQ queue.
+  Drq_q *queue = static_cast<Drq_q *>(_drq.queue());
+
+  // If our DRQ item is queued in our own DRQ queue, we know that the DRQ was
+  // already executed by the receiver and the response is pending.
+  if (queue == &this->_drq_q)
+    return false;
+
+  // Otherwise the queue we observed must be the receiver's queue, so we try
+  // to dequeue the DRQ from that queue. If it succeeds, we successfully
+  // aborted the DRQ, otherwise the receiver is currently executing the DRQ
+  // and we have to wait for its response.
+  // Note that we do not remove the receiver context from `_pending_rqq`, since
+  // that would be racy anyway. The receiver might wake up to an empty DRQ
+  // queue, but gracefully handles it.
+  return queue->dequeue(&_drq);
+}
 
 IMPLEMENT_DEFAULT inline
 void
@@ -2321,7 +2365,17 @@ Reschedule
 Context::_deq_exec_drq(Drq *rq, bool offline_cpu = false)
 {
   if (!_drq_q.dequeue(rq))
-    return Reschedule::No; // already handled
+    {
+      if (!drq_pending())
+        {
+          // Always clear Thread_drq_ready, even if no DRQ is pending, because
+          // it might still be set if the DRQ was aborted in the meantime.
+          if (state(false) & Thread_drq_ready) [[unlikely]]
+            state_del_dirty(Thread_drq_ready);
+        }
+
+      return Reschedule::No; // already handled
+    }
 
   if (!drq_pending())
     {
