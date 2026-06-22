@@ -400,7 +400,12 @@ private:
   Clock::Time _consumed_time;
 
   Drq _drq;
+  // Queue of regular DRQs targeting this context, which are executed when
+  // this context gets scheduled on its CPU.
   Drq_q _drq_q;
+  // Queue of eager DRQs targeting this context, which are executed
+  // directly in the remote requests IPI handler.
+  Drq_q _eager_drq_q;
 
 protected:
   // for trigger_exception
@@ -1369,7 +1374,7 @@ Context::Drq_q::execute_request(Drq *r, bool local)
               return need_resched;
             }
           else
-            need_resched |= c->enqueue_drq(r);
+            need_resched |= c->enqueue_drq(r, false);
         }
     }
   return need_resched;
@@ -1427,6 +1432,16 @@ bool
 Context::drq_pending() const
 { return _drq_q.first(); }
 
+/**
+ * Check for pending eager DRQs.
+ *
+ * \return true if there are eager DRQs pending, false if not.
+ */
+PUBLIC inline
+bool
+Context::eager_drq_pending() const
+{ return _eager_drq_q.first(); }
+
 PUBLIC inline NEEDS["thread_state.h"]
 void
 Context::try_finish_migration()
@@ -1470,7 +1485,7 @@ Context::handle_drq()
       resched |= Reschedule::if_not_zero(st & Thread_need_resched);
     }
 
-  if (!drq_pending()) [[likely]]
+  if (!drq_pending() && !eager_drq_pending()) [[likely]]
     {
       // Always clear Thread_drq_ready, even if no DRQ is pending, because it
       // might still be set if a DRQ was aborted.
@@ -1479,7 +1494,16 @@ Context::handle_drq()
     }
 
   Mem::barrier();
-  resched |= _drq_q.handle_requests();
+  // Handling eager DRQs here is necessary for certain edge cases, e.g.
+  // migrations, where the _pending_rq of a thread is removed from the
+  // _pending_rqq, and we rely on handle_drq() to ensure that pending
+  // DRQs are executed.
+  if (eager_drq_pending())
+    resched |= _eager_drq_q.handle_requests();
+
+  if (drq_pending())
+    resched |= _drq_q.handle_requests();
+
   state_del_dirty(Thread_drq_ready);
 
   //LOG_MSG_3VAL(this, "xdrq", state(), 0, cpu_lock.test());
@@ -1627,6 +1651,10 @@ Context::xcpu_state_change(Mword mask, Mword add, bool lazy_q = false)
  * \param wait  On `Drq::Wait`, this function waits for the result of DRQ
  *              handler; on `Drq::No_wait`, this function returns after the DRQ
  *              was enqueued and the DRQ handler is executed asynchronously.
+ * \param eager If true, execute the DRQ eagerly, i.e. directly in the remote
+ *              requests IPI handler.
+ *              If false, execute the DRQ in the context of the target context
+ *              when it gets scheduled on its CPU.
  *
  * DRQs are requests that any context can queue to any other context. DRQs are
  * the basic mechanism to initiate actions on remote CPUs in an MP system,
@@ -1648,7 +1676,7 @@ Context::xcpu_state_change(Mword mask, Mword add, bool lazy_q = false)
 PUBLIC inline NEEDS[Context::enqueue_drq, "logdefs.h", "thread_state.h"]
 void
 Context::drq(Drq *drq, Drq::Request_func *func, void *arg,
-             Drq::Wait_mode wait = Drq::Wait)
+             Drq::Wait_mode wait = Drq::Wait, bool eager = false)
 {
   if constexpr (0)
     printf("CPU[%2u:%p]: > Context::drq(this=%p, func=%p, arg=%p)\n",
@@ -1674,7 +1702,7 @@ Context::drq(Drq *drq, Drq::Request_func *func, void *arg,
   if (wait == Drq::Wait)
     cur->state_add_dirty(Thread_drq_wait);
 
-  enqueue_drq(drq);
+  enqueue_drq(drq, eager);
 
   while (wait == Drq::Wait && cur->state() & Thread_drq_wait)
     {
@@ -1720,8 +1748,8 @@ Context::kernel_context_drq(Drq::Request_func *func, void *arg)
 PUBLIC inline NEEDS[Context::drq]
 void
 Context::drq(Drq::Request_func *func, void *arg,
-             Drq::Wait_mode wait = Drq::Wait)
-{ return drq(&current()->_drq, func, arg, wait); }
+             Drq::Wait_mode wait = Drq::Wait, bool eager = false)
+{ return drq(&current()->_drq, func, arg, wait, eager); }
 
 /**
  * Abort a DRQ initiated by this context.
@@ -1864,7 +1892,7 @@ Context::pending_rqq_enqueue()
 
 PUBLIC
 Reschedule
-Context::enqueue_drq(Drq *rq)
+Context::enqueue_drq(Drq *rq, bool)
 {
   assert (cpu_lock.test());
 
@@ -2186,6 +2214,9 @@ Context::Pending_rqq::handle_requests(Context **mq)
       else
         c->try_finish_migration();
 
+      if (c->eager_drq_pending())
+        c->_eager_drq_q.handle_requests();
+
       if (c->drq_pending()) [[likely]]
         {
           if (c != curr) [[likely]]
@@ -2364,7 +2395,7 @@ PRIVATE inline
 Reschedule
 Context::_deq_exec_drq(Drq *rq, bool offline_cpu = false)
 {
-  if (!_drq_q.dequeue(rq))
+  if (!_drq_q.dequeue(rq) && !_eager_drq_q.dequeue(rq))
     {
       if (!drq_pending())
         {
@@ -2388,7 +2419,7 @@ Context::_deq_exec_drq(Drq *rq, bool offline_cpu = false)
 
 PUBLIC
 Reschedule
-Context::enqueue_drq(Drq *rq)
+Context::enqueue_drq(Drq *rq, bool eager)
 {
   assert (cpu_lock.test());
 
@@ -2409,7 +2440,10 @@ Context::enqueue_drq(Drq *rq)
   if (cpu == current_cpu) [[unlikely]]
     return _execute_drq(rq);
 
-  _drq_q.enq(rq);
+  if (eager)
+    _eager_drq_q.enq(rq);
+  else
+    _drq_q.enq(rq);
 
   // re-read the cpu number, we may have been migrated. We need to be sure to
   // signal the right CPU that there is work for us.
