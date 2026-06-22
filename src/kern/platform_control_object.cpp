@@ -106,7 +106,7 @@ Platform_control_object::kinvoke(L4_obj_ref ref, L4_fpage::Rights rights,
   if (tag.proto() == L4_msg_tag::Label_irq)
     return Icu::icu_invoke(ref, rights, f, r_msg, s_msg);
 
-  if (!Ko::check_basics(&tag, 0))
+  if (!Ko::check_basics(&tag, L4_msg_tag::Label_platform_ctl))
     return tag;
 
   switch (static_cast<Op>(r_msg->values[0]))

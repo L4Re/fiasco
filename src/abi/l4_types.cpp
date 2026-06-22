@@ -437,6 +437,7 @@ public:
      */
     Label_allow_syscall = 1,
 
+    Label_platform_ctl = 0L,   ///< Platform control.
     Label_irq = -1L,           ///< IRQ object protocol.
     Label_page_fault = -2L,    ///< Page fault messages use this protocol.
     // -3L: unused
