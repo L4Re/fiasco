@@ -120,6 +120,33 @@ config LAZY_FPU
 
 	  It is safe to enable this option on AMD CPUs.
 
+choice
+	prompt "Default CPU performance profile"
+	depends on IA32 || AMD64
+	default CONFIG_PERF_PROFILE_DEFAULT_DISTRIBUTED
+	help
+	  Choose the desired performance profile for all CPUs. This is a
+	  default value which can be overridden by the kernel command line
+	  parameter "-perf-profile".
+
+config CONTEXT_PERF_PROFILE_DEFAULT_LOW_POWER
+	bool "Low power"
+	help
+	  Prefer low power consumption over performance.
+
+config CONFIG_PERF_PROFILE_DEFAULT_DISTRIBUTED
+	bool "Distributed"
+	help
+	  Prefer evenly distributed power consumption and performance over all
+	  cores and limit the maximum single core turbo frequency.
+
+config CONFIG_PERF_PROFILE_DEFAULT_MAX_SINGLE_CORE
+	bool "Maximum single core"
+	help
+	  Maximum single core performance -- good for single core benchmarks.
+
+endchoice
+
 # PF_SECTION: TARGET
 
 config DT

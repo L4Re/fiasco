@@ -23,6 +23,7 @@ namespace Koptions_ns
                Koptions::Version_current,
                0,                              // flags
                0,                              // kmemsize
+               0,                              // perf_profile
                { 0, 0, 0, 0, 0, 0, "" },       // uart
                0,                              // core_spin_addr
                "",                             // jdb_cmd

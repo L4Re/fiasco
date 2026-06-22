@@ -76,6 +76,24 @@ public:
 
   static bool hlt_works_ok;
 
+  /** Global performance profile covering all CPUs in the system. */
+  enum
+  {
+    /** Prefer low power consumption over performance. */
+    Performance_low_power = 0,
+
+    /**
+     * Prefer evenly distributed power consumption and performance over all
+     * cores and limit the maximum single core turbo frequency.
+     */
+    Performance_distributed = 1,
+
+    /** Maximum single core performance -- good for single core benchmarks. */
+    Performance_max_single_core = 2,
+  };
+
+  static unsigned performance_profile;
+
   // the default uart to use for serial console
   static const unsigned default_console_uart = 1;
   static const unsigned default_console_uart_baudrate = 115200;
@@ -102,6 +120,16 @@ unsigned Config::scheduler_irq_vector;
 #ifdef CONFIG_WATCHDOG
 bool Config::watchdog = false;
 #endif
+
+unsigned Config::performance_profile =
+#if defined(CONFIG_DEFAULT_PERF_PROFILE_LOW_POWER)
+  Performance_low_power
+#elif defined(CONFIG_DEFAULT_PERF_PROFILE_MAX_SINGLE_CORE)
+  Performance_max_single_core
+#else
+  Performance_distributed
+#endif
+  ;
 
 IMPLEMENT_OVERRIDE constexpr
 char const *
@@ -152,5 +180,8 @@ Config::init_arch()
 
   if (Scheduler_mode == SCHED_APIC)
     apic = true;
+
+  if (Koptions::o()->opt(Koptions::F_perf_profile))
+    performance_profile = Koptions::o()->perf_profile;
 }
 

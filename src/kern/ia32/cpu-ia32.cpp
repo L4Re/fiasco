@@ -1405,21 +1405,56 @@ Cpu::try_enable_hw_performance_states(bool resume)
   // [24:31] = Lowest performance
   Unsigned64 hwp_caps = rdmsr(Msr::Hwp_capabilities);
 
+  Unsigned8 energy_precedence;
+  Unsigned8 perf_desired;
+  Unsigned8 perf_maximum;
+  Unsigned8 perf_minimum;
+  char const *prof_name;
+  switch (Config::performance_profile)
+    {
+    case Config::Performance_low_power:
+      perf_desired = (hwp_caps >> Efficient_performance_shift) & 0xff;
+      perf_maximum = (hwp_caps >> Highest_performance_shift) & 0xff;
+      perf_minimum = (hwp_caps >> Lowest_performance_shift) & 0xff;
+      energy_precedence = 0xff;
+      prof_name = "low power";
+      break;
+
+    case Config::Performance_distributed:
+
+      perf_desired = (hwp_caps >> Highest_performance_shift) & 0xff;
+      perf_maximum = (hwp_caps >> Highest_performance_shift) & 0xff;
+      perf_minimum = (hwp_caps >> Guaranteed_performance_shift) & 0xff;
+      energy_precedence = 0x80;
+      prof_name = "distributed";
+      break;
+
+    case Config::Performance_max_single_core:
+    default:
+      perf_desired = (hwp_caps >> Highest_performance_shift) & 0xff;
+      perf_maximum = (hwp_caps >> Highest_performance_shift) & 0xff;
+      perf_minimum = (hwp_caps >> Guaranteed_performance_shift) & 0xff;
+      energy_precedence = 0x00;
+      prof_name = "maximum single core";
+      break;
+    }
+
   // Package_Control (bit 42) = 0
   // Activity_Window (bits 41:32) = 0 (auto)
-  // Energy_Performance_Preference (bits 31:24) = 0x80 (default)
-  // Desired_Performance (bits 23:16) = Highest_Performance(hwp_cap)
-  // Maximum_Performance (bits 15:8) = Highest_Performance(hwp_cap)
-  // Minimum_Performance (bits 7:0) = Guaranteed_Performance(hwp_cap)
-  Unsigned64 request =
-    0x80ULL << 24
-    | (((hwp_caps >> Highest_performance_shift) & 0xff) << 16)
-    | (((hwp_caps >> Highest_performance_shift) & 0xff) << 8)
-    | ((hwp_caps >> Guaranteed_performance_shift) & 0xff);
+  // Energy_Performance_Preference (bits 31:24): 0x00=performance, 0xff=energy
+  // Desired_Performance (bits 23:16)
+  // Maximum_Performance (bits 15:8)
+  // Minimum_Performance (bits 7:0)
+  Unsigned64 request = 0x0
+    | (static_cast<Unsigned64>(energy_precedence) << 24)
+    | (static_cast<Unsigned64>(perf_desired) << 16)
+    | (static_cast<Unsigned64>(perf_maximum) << 8)
+    | (static_cast<Unsigned64>(perf_minimum) << 0);
+
   wrmsr(request, Msr::Hwp_request);
 
   if (!resume && id() == Cpu_number::boot_cpu())
-    printf("HWP: enabled\n");
+    printf("HWP: profile '%s' enabled\n", prof_name);
 }
 
 IMPLEMENT FIASCO_INIT_CPU
