@@ -1385,14 +1385,14 @@ Cpu::try_enable_hw_performance_states(bool resume)
 {
   enum
   {
-    HWP_SUPPORT = 1 << 7,
-    HIGHEST_PERFORMANCE_SHIFT = 0,
-    GUARANTEED_PERFORMANCE_SHIFT = 8,
-    EFFICIENT_PERFORMANCE_SHIFT = 16,
-    LOWEST_PERFORMANCE_SHIFT = 24
+    Hwp_support = 1 << 7,
+    Highest_performance_shift = 0,
+    Guaranteed_performance_shift = 8,
+    Efficient_performance_shift = 16,
+    Lowest_performance_shift = 24
   };
 
-  if (!(_thermal_and_pm_eax & HWP_SUPPORT))
+  if (!(_thermal_and_pm_eax & Hwp_support))
     return;
 
   // enable
@@ -1408,14 +1408,14 @@ Cpu::try_enable_hw_performance_states(bool resume)
   // Package_Control (bit 42) = 0
   // Activity_Window (bits 41:32) = 0 (auto)
   // Energy_Performance_Preference (bits 31:24) = 0x80 (default)
-  // Desired_Performance (bits 23:16) = HIGHEST_PERFORMANCE(hwp_cap)
-  // Maximum_Performance (bits 15:8) = HIGHEST_PERFORMANCE(hwp_cap)
-  // Minimum_Performance (bits 7:0) = GUARANTEED_PERFORMANCE(hwp_cap)
+  // Desired_Performance (bits 23:16) = Highest_Performance(hwp_cap)
+  // Maximum_Performance (bits 15:8) = Highest_Performance(hwp_cap)
+  // Minimum_Performance (bits 7:0) = Guaranteed_Performance(hwp_cap)
   Unsigned64 request =
     0x80ULL << 24
-    | (((hwp_caps >> HIGHEST_PERFORMANCE_SHIFT) & 0xff) << 16)
-    | (((hwp_caps >> HIGHEST_PERFORMANCE_SHIFT) & 0xff) << 8)
-    | ((hwp_caps >> GUARANTEED_PERFORMANCE_SHIFT) & 0xff);
+    | (((hwp_caps >> Highest_performance_shift) & 0xff) << 16)
+    | (((hwp_caps >> Highest_performance_shift) & 0xff) << 8)
+    | ((hwp_caps >> Guaranteed_performance_shift) & 0xff);
   wrmsr(request, Msr::Hwp_request);
 
   if (!resume && id() == Cpu_number::boot_cpu())
