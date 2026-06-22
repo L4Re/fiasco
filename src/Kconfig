@@ -406,7 +406,7 @@ config MAPDB
 
 config ALIEN
 	bool "Support alien threads"
-	default y
+	depends on EXPERT
 	help
 	  If this feature is enabled then the kernel produces an exception IPC
 	  for each IPC and exception caused by a thread in alien mode instead
