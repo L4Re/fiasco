@@ -46,7 +46,7 @@ Obj_cap::deref(L4_fpage::Rights *rights, bool dbg = false)
   if (op() & L4_obj_ref::Ipc_reply)
     {
       Reply_cap_index reply_cap_index = Receiver::Implicit_reply_cap_index;
-      if (explicit_reply())
+      if (!special())
         reply_cap_index = reply_cap();
 
       Reply_cap reply_cap;
@@ -59,7 +59,16 @@ Obj_cap::deref(L4_fpage::Rights *rights, bool dbg = false)
       return static_cast<Thread*>(reply_cap.caller());
     }
 
-  if (special()) [[unlikely]]
+  // When explicitly requested by the user via #Special_bit, use the curent
+  // thread. Do the same when dealing with an open wait without a send since
+  // there is no partner in this case. We cannot require the user to set
+  // #Special_bit, because in the latter case the upper bits of the capability
+  // selector refer to a reply capability where #Special_bit has a dedicated
+  // meaning.
+  if ( special()
+     || ( !(op() & L4_obj_ref::Ipc_send     )
+        && (op() & L4_obj_ref::Ipc_open_wait)
+     )  ) [[unlikely]]
     {
       // "self" or "explicit reply capability".
       *rights = L4_fpage::Rights::CWS();

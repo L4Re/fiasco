@@ -484,7 +484,18 @@ bool Receiver::prepare_receive(Sender *partner, Syscall_frame *regs)
   if (open_wait)
     {
       Reply_cap_slot *slot = &_implicit_reply_cap;
-      if (regs->ref().explicit_reply())
+
+      // The absence of the special bit indicates that the user provided a reply
+      // capability index for the reply capability space. However, for the
+      // receive phase, a reply capability index can be provided only in certain
+      // operations: An open wait (without a send) and a reply and wait. In case
+      // of a send and open wait, the implicit reply capability slot is used,
+      // because the necessary bits for naming a reply capability are already
+      // needed for specifying the send target.
+      if ( !regs->ref().special()
+         && ( !(regs->ref().op() & L4_obj_ref::Ipc_send )
+            || (regs->ref().op() & L4_obj_ref::Ipc_reply)
+         )  )
         {
           if constexpr (TAG_ENABLED(explicit_reply_caps))
             {

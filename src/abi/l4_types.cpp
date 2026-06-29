@@ -22,15 +22,7 @@ using Reply_cap_index = cxx::int_type_full<Mword, struct Reply_cap_index_t,
                                            Reply_cap_diff, Order>;
 
 /**
- * A reference to a kernel object (capability selector),
- * as passed from user level.
- *
- * A capability selector contains an index into the capability table/object
- * space of a task. The index is usually stored in the most significant bits
- * of the binary representation. The twelve least significant bits are used to
- * denote the type of operation that shall be invoked and also flags for
- * special capabilities, such as the invalid cap, the reply capability, or the
- * self capability.
+ * An IPC operation paired with a capability selector.
  *
  * Generally all operations on kernel objects are modelled as message passing
  * primitives that consist of two phases, the send phase and the receive phase.
@@ -39,13 +31,37 @@ using Reply_cap_index = cxx::int_type_full<Mword, struct Reply_cap_index_t,
  * The terms send and receive are from the invokers point of view. This means,
  * a client doing RPC needs a send for sending the requested operation and
  * parameters and a receive to receive the return code of the RPC.
+ *
+ * The IPC operation determines the type of capability the selector is referring
+ * to:
+ *
+ * - When the operation is a reply (with or without a receive phase) or an open
+ *   wait without a send, then the selector refers to a reply capability.
+ * - Otherwise, the selector refers to an object capability. In case the
+ *   operation is a send and open wait, the implicit reply capability is used
+ *   for storing the caller.
+ *
+ * When #Special_bit is not set, the upper bits of the capability selector
+ * contain a capability index for the respective space (reply capability space
+ * or object capability space). When #Special_bit is set, the meaning depends on
+ * the type of capability:
+ *
+ * - When the operation needs a reply capability, the implicit reply capability
+ *   of the invoking thread is used. Each thread has its own implicit reply
+ *   capability and a thread may refer only to its own implicit reply
+ *   capability. Implicit reply capabilities are *not* assigned to a capability
+ *   index in a task’s reply capability space.
+ * - When the operation needs an object capability, an implicit object
+ *   capability for the invoking thread with full permissions is used.
+ *
+ * In case of an open wait, the specified (or, in case there is also a send
+ * phase, the implicit) reply capability is (also) used for storing the caller.
  */
 class L4_obj_ref
 {
 public:
   /**
-   * Operation codes, stored in the four least significant bits of a capability
-   * selector.
+   * Operation codes, stored in the four least significant bits of #L4_obj_ref.
    */
   enum Operation
   {
@@ -55,17 +71,15 @@ public:
     /**
      * Set this bit to include a send phase.
      *
-     * In the case of a send phase, the message is sent to the object
-     * denoted by either the capability selector (cap()), the reply capability
-     * (if #Ipc_reply is also set), or to the thread itself (if the cap is the
-     * special self capability).
+     * The target of the send operation is determined by the #Ipc_reply bit and
+     * the capability selector.
      */
     Ipc_send = 1,
 
     /**
      * Set this bit to include a receive phase.
      *
-     * During the receive phase the caller waits for a message from either a
+     * During the receive phase the invoker waits for a message from either a
      * specific sender (closed wait) or from any possible sender
      * (#Ipc_open_wait) that has a capability to send messages to the invoker.
      */
@@ -75,20 +89,25 @@ public:
      * Set this bit to denote an open-wait receive phase.
      *
      * An open wait means that the invoker shall wait for a message from any
-     * sender that has a capability to send messages to the invoker. In this
-     * case the index (cap()) in the capability selector is ignored for the
-     * receive phase.
+     * sender that has a capability to send messages to the invoker.
+     *
+     * When a call message is received during an open wait, a reply capability
+     * is generated, which can be used for replying to the call. The capability
+     * selector determines where this capability shall be stored unless the open
+     * wait is paired with a send phase in which case the caller is stored as
+     * implicit reply capability.
      */
     Ipc_open_wait = 4,
 
     /**
      * Set this bit to make the send phase a reply.
      *
-     * A reply operation uses the implicit reply capability that is stored
-     * in per thread storage and can be used only once. The reply capability
+     * A reply operation uses either the implicit reply capability or a reply
+     * capability identified by a capability index named in the capability
+     * selector. A reply capability can be used only once. The reply capability
      * also vanishes in the case of an abort due to the caller or a newly
      * received call operation by the same thread.
-     * \see #Ipc_send.
+     * \see #Ipc_send
      */
     Ipc_reply = 8,
 
@@ -120,10 +139,10 @@ public:
      * Denotes a call operation (#Ipc_send | #Ipc_recv).
      *
      * A call is usually used by a client to invoke an operation on a remote
-     * object and wait for a result. The call operation establishes the
-     * implicit reply capability for the partner thread (see #Ipc_reply)
-     * and enables the implementation of an object to respond to an invocation
-     * without knowledge of the invoker thread.
+     * object and wait for a result. The call operation establishes a reply
+     * capability for the partner thread (see #Ipc_reply) and enables the
+     * implementation of an object to respond to an invocation without knowledge
+     * of the invoker thread.
      */
     Ipc_call_ipc       = Ipc_send | Ipc_recv,
   };
@@ -139,34 +158,19 @@ public:
     Invalid      = 1UL << 11UL,
 
     /**
-     * Selector into the explicit reply cap space instead of the regular
-     * capability space.
+     * Bit that flags a capability selector as special.
      *
-     * Send phase: The sender wants to use an explicit reply cap slot from its
-     * reply cap space, instead of the otherwise used per-thread implicit reply
-     * cap slot.
-     *
-     * Receive phase: The receiver wants to store the caller in an explicit
-     * reply cap slot from its reply cap space, instead of the otherwise used
-     * per-thread implicit reply cap slot.
-     *
-     * The sender/receiver provides the explicit reply cap slot index in
-     * L4_obj_ref::cap().
-     *
-     * \note Only valid in combination with Ipc_reply, Ipc_wait and
-     *       Ipc_reply_and_wait.
+     * When this bit is set, the upper bits are not interpreted as capability
+     * index. Instead, depending on the operation, a capability for the invoking
+     * thread with full permissions or the implicit reply capability of the
+     * thread is used, see #L4_obj_ref.
      */
-    Explicit_reply = 1UL << 10,
-
-    /**
-     * Bits that flags a capability selector as special.
-     */
-    Special_bits  = Invalid | Explicit_reply,
+    Special_bit  = 1UL << 11UL,
 
     /**
      * Mask for getting all bits of special capabilities.
      */
-    Special_mask = (~0UL) << 10,
+    Special_mask = (~0UL) << 11UL,
   };
 
   enum
@@ -179,42 +183,37 @@ public:
    * \param s which special cap selector shall be created
    *          (see L4_obj_ref::Special).
    *
-   * Special capability selectors are the invalid capability and the self
-   * Capability. All special capability selectors must have the #Special_bit
-   * set.
+   * Special capability selectors name, when dealing with object capabilities,
+   * the invalid capability and the self capability, and, when dealing with
+   * reply capabilities, the implicit reply capability. All special capability
+   * selectors must have the #Special_bit set.
    */
   L4_obj_ref(Special s = Invalid) : _raw(s) {}
 
   /**
-   * Create a capability selector from it's binary representation.
-   * \param raw the raw binary representation of a capability selector. As
-   *            passed from user land.
+   * Create an #L4_obj_ref from it's binary representation.
+   * \param raw  The raw binary representation of the #L4_obj_ref. As passed
+   *             from user land.
    */
   static L4_obj_ref from_raw(Mword raw) { return L4_obj_ref(true, raw); }
 
   /**
    * Is the capability selector a valid capability (no special capability).
-   * \return true if the capability selector is a valid index into the
+   * \return true if the capability selector is a valid index into a
    *         capability table, or false if the selector is a special
    *         capability.
    */
-  bool valid() const { return !(_raw & Invalid); }
+  bool valid() const { return !(_raw & Special_bit); }
 
   /**
    * Is the capability selector a special capability (i.e., not an index
-   * into the capability table).
+   * into a capability table).
    * \return true if the capability selector denotes a special capability
    *         (see L4_obj_ref::Special), or false if this capability is a
    *         valid index into a capability table.
    *
    */
-  bool special() const { return _raw & Special_bits; }
-
-  /**
-   * Is this a capability selector into the reply capability table?
-   */
-  bool explicit_reply() const
-  { return (_raw & Special_bits) == Explicit_reply; }
+  bool special() const { return _raw & Special_bit; }
 
   /**
    * Get the value of a special capability.
@@ -227,14 +226,16 @@ public:
 
   /**
    * Does the operation contain a receive phase?
-   * \return true if the operation encoded in the capability selector
-   *              comprises a receive phase, see #L4_obj_ref::Ipc_recv.
+   * \return true if the operation encoded in the #L4_obj_ref comprises a
+   *         receive phase, see #L4_obj_ref::Ipc_recv.
    */
   unsigned have_recv() const { return _raw & Ipc_recv; }
 
   /**
-   * Get the index into the capability table.
+   * Get the index into the object capability table.
    * \pre valid() == true
+   * \pre op() indicates an operation that implies that the capability selector
+   *      refers to an object capability; see #L4_obj_ref.
    * \return The index into the capability table stored in the capability
    *         selector (i.e., the most significant bits of the selector).
    */
@@ -242,46 +243,50 @@ public:
 
   /**
    * Get the index into the reply capability table.
-   * \pre valid() && explicit_reply()
+   * \pre valid()
+   * \pre op() indicates an operation that implies that the capability selector
+   *      refers to a reply capability; see #L4_obj_ref.
    */
   Reply_cap_index reply_cap() const
   { return Reply_cap_index(_raw >> Cap_shift); }
 
   /**
-   * Get the operation stored in this selector (see L4_obj_ref::Operation).
-   * \return The operation encoded in the lower 4 bits of the capability
-   *         selector, see L4_obj_ref::Operation.
+   * Get the operation stored in this #L4_obj_ref (see L4_obj_ref::Operation).
+   * \return The operation encoded in the lower 4 bits of #L4_obj_ref, see
+             L4_obj_ref::Operation.
    */
   Operation op() const { return static_cast<Operation>(_raw & 0xf); }
 
   /**
-   * Get the raw binary representation of this capability selector.
-   * \return the binary representation of this cap selector.
+   * Get the raw binary representation of this #L4_obj_ref.
+   * \return the binary representation of this #L4_obj_ref.
    */
   Mword raw() const { return _raw; }
 
   /**
-   * Create a valid capability selector for the shifted cap-table index
-   * and the operation.
+   * Create a valid #L4_obj_ref for the shifted cap-table index and the
+   * operation.
    * \param cap the shifted (<< #Cap_shift) capability-table index.
    * \param op the operation to be encoded in bits 0..3.
    */
   explicit L4_obj_ref(Mword cap, Operation op = None) : _raw(cap | op) {}
+  /// \copydoc L4_obj_ref(Mword, Operation)
   explicit L4_obj_ref(Cap_index cap, Operation op = None)
   : _raw((cxx::int_value<Cap_index>(cap) << L4_obj_ref::Cap_shift) | op) {}
 
   /**
-   * Create a capability selector (index 0) with the given operation.
-   * \param op the operation to be encoded into the capability selector,
-   *        see L4_obj_ref::Operation.
+   * Create an #L4_obj_ref with a zeroed capability selector and the given
+   * operation.
+   * \param op  The operation to be encoded into the #L4_obj_ref,
+   *            see L4_obj_ref::Operation.
    */
   L4_obj_ref(Operation op) : _raw(op) {}
 
   /**
-   * Compare two capability selectors for equality.
+   * Compare two #L4_obj_ref for equality.
    * \param lhs the left hand side for the comparison.
    * \param rhs the right hand side for the comparison.
-   * \note Capability selectors are compared by their binary representation.
+   * \note They are compared by their binary representation.
    */
   friend bool operator == (L4_obj_ref const &lhs, L4_obj_ref const &rhs)
   { return lhs._raw == rhs._raw; }
