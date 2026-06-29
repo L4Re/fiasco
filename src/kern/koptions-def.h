@@ -62,9 +62,9 @@ namespace L4_kernel_options
     Unsigned32  baud;         ///< Baud rate (this is the baud rate to use)
     Unsigned16  irqno;        ///< (Receive) IRQ
     Unsigned8   reg_shift;    ///< Shift value for register addressing
-    Unsigned8   access_type;  ///< Accesstype of UART: unset, MMIO or ports
+    Unsigned8   access_type;  ///< See Uart_type
     Unsigned64  base_address; ///< Start address of UART
-    char         compatible_id[32]; ///< Uart Device Tree compatible string
+    char        compatible_id[32]; ///< Uart Device Tree compatible string
   } __attribute__((packed));
 
   struct Options
@@ -76,11 +76,11 @@ namespace L4_kernel_options
 
     Unsigned32  kmemsize;         ///< Wanted kernel memory size in KiB
 
-    Uart uart;                     ///< Kernel UART
+    Uart uart;                    ///< Kernel UART
 
     Unsigned64  core_spin_addr;   ///< Boot address for secondary cores
 
-    char         jdb_cmd[128];
+    char        jdb_cmd[128];
     Unsigned32  tbuf_entries;
     Unsigned32  out_buf;
 
