@@ -2294,7 +2294,14 @@ Context::take_cpu_online()
 {
   assert(!Proc::interrupts());
 
-  Cpu::cpus.current().set_online();
+    {
+      // DRQ execution on offline CPUs and thread migrations are synchronized
+      // through the lock of the CPU's _pending_rqq. Thus we must call
+      // set_online() under that lock.
+      auto guard = lock_guard(_pending_rqq.current().q_lock());
+      Cpu::cpus.current().set_online();
+    }
+
   Rcu::leave_idle(current_cpu());
 }
 
