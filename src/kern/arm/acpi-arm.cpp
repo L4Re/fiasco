@@ -2,6 +2,34 @@ INTERFACE:
 
 #include <acpi.h>
 
+struct Acpi_gtdt : public Acpi_table_head
+{
+  enum Timer_flags : Unsigned32
+  {
+    Interrupt_edge   = 1 << 0, ///< edge-triggered, otherwise level
+    Interrupt_low    = 1 << 1, ///< active-low, otherwise active-high
+    Always_on        = 1 << 2,
+  };
+
+  Unsigned64 cnt_control_base;
+  Unsigned32 _res0;
+  Unsigned32 secure_el1_gsiv;
+  Unsigned32 secure_el1_flags;
+  Unsigned32 non_secure_el1_gsiv;
+  Unsigned32 non_secure_el1_flags;
+  Unsigned32 virtual_el1_gsiv;
+  Unsigned32 virtual_el1_flags;
+  Unsigned32 non_secure_el2_gsiv;
+  Unsigned32 non_secure_el2_flags;
+  // Fields below only valid for rev >= 2 (ACPI 5.1)
+  Unsigned64 cnt_read_base;
+  Unsigned32 platform_timer_count;
+  Unsigned32 platform_timer_offset;
+  // Fields below only valid for rev >= 3 (ACPI 6.3)
+  Unsigned32 virtual_el2_gsiv;
+  Unsigned32 virtual_el2_flags;
+} __attribute__((packed));
+
 struct Acpi_iort : public Acpi_table_head
 {
   Unsigned32 node_count;

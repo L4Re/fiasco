@@ -1,4 +1,4 @@
-INTERFACE [arm_generic_timer && dt]:
+IMPLEMENTATION [arm_generic_timer && (dt || arm_acpi)]:
 
 #include "dt.h"
 
@@ -7,8 +7,34 @@ EXTENSION class Timer
   static unsigned _irq_phys, _irq_virt, _irq_hyp, _irq_secure_hyp;
 };
 
+unsigned Timer::_irq_phys, Timer::_irq_virt, Timer::_irq_hyp, Timer::_irq_secure_hyp;
+
+PUBLIC static inline
+unsigned Timer::irq()
+{
+  switch (Gtimer::Type)
+  {
+    case Generic_timer::Physical:   return _irq_phys;
+    case Generic_timer::Virtual:    return _irq_virt;
+    case Generic_timer::Hyp:        return _irq_hyp;
+    case Generic_timer::Secure_hyp: return _irq_secure_hyp;
+  };
+}
+
+IMPLEMENT
+void Timer::bsp_init(Cpu_number cpu)
+{
+  if (cpu != Cpu_number::boot_cpu())
+    return;
+
+  if (Dt::have_fdt())
+    init_dt();
+  else
+    init_acpi();
+}
+
 // ------------------------------------------------------------------
-IMPLEMENTATION [arm_generic_timer && !dt]:
+IMPLEMENTATION [arm_generic_timer && !dt && !arm_acpi]:
 
 PUBLIC static inline
 unsigned Timer::irq()
@@ -34,26 +60,11 @@ void Timer::bsp_init(Cpu_number)
 // ------------------------------------------------------------------
 IMPLEMENTATION [arm_generic_timer && dt]:
 
+#include "dt.h"
 #include "panic.h"
 
-#include <stdio.h>
-
-unsigned Timer::_irq_phys, Timer::_irq_virt, Timer::_irq_hyp, Timer::_irq_secure_hyp;
-
-PUBLIC static inline
-unsigned Timer::irq()
-{
-  switch (Gtimer::Type)
-    {
-    case Generic_timer::Physical:   return _irq_phys;
-    case Generic_timer::Virtual:    return _irq_virt;
-    case Generic_timer::Hyp:        return _irq_hyp;
-    case Generic_timer::Secure_hyp: return _irq_secure_hyp;
-    };
-}
-
-IMPLEMENT
-void Timer::bsp_init(Cpu_number)
+PRIVATE static
+void Timer::init_dt()
 {
   const char *c[] = { "arm,armv7-timer", "arm,armv8-timer",
                       "arm,cortex-a15-timer" };
@@ -91,3 +102,44 @@ void Timer::bsp_init(Cpu_number)
         panic("No hypervisor interrupt given in timer DT");
     }
 }
+
+// ------------------------------------------------------------------
+IMPLEMENTATION [arm_generic_timer && !dt]:
+
+PRIVATE static
+void Timer::init_dt()
+{}
+
+// ------------------------------------------------------------------
+IMPLEMENTATION [arm_generic_timer && arm_acpi]:
+
+#include "acpi.h"
+
+PRIVATE static
+void Timer::init_acpi()
+{
+  // ARM Base System Architecture 3.6 - PPI assignments, used as defaults
+  // in case ACPI does not provide a GTDT
+  _irq_phys       = 30;
+  _irq_virt       = 27;
+  _irq_hyp        = 26;
+  _irq_secure_hyp = 20;
+
+  auto const *gtdt = Acpi::find<Acpi_gtdt const *>("GTDT");
+  if (!gtdt)
+    return;
+
+  if (gtdt->non_secure_el1_gsiv)
+    _irq_phys = gtdt->non_secure_el1_gsiv;
+  if (gtdt->virtual_el1_gsiv)
+    _irq_virt = gtdt->virtual_el1_gsiv;
+  if (gtdt->non_secure_el2_gsiv)
+    _irq_hyp = gtdt->non_secure_el2_gsiv;
+}
+
+// ------------------------------------------------------------------
+IMPLEMENTATION [arm_generic_timer && !arm_acpi]:
+
+PRIVATE static
+void Timer::init_acpi()
+{}
