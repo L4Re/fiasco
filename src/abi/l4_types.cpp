@@ -211,13 +211,6 @@ public:
   bool special() const { return _raw & Special_bits; }
 
   /**
-   * Is this capability selector the special `self` capability.
-   * \return true if this capability is the special self capability for the
-   *         invoking thread.
-   */
-  bool self() const { return (_raw & Special_bits) == Invalid; }
-
-  /**
    * Is this a capability selector into the reply capability table?
    */
   bool explicit_reply() const
