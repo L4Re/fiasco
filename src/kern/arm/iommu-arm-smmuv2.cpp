@@ -1,4 +1,4 @@
-INTERFACE [iommu]:
+INTERFACE [iommu_arm_smmu_v2]:
 
 #include "types.h"
 #include "spin_lock.h"
@@ -25,7 +25,7 @@ INTERFACE [iommu]:
  * Interrupts are only used to output a debug message and only enabled if the
  * warning level is high enough, currently Warn_level::Info.
  */
-EXTENSION class Iommu
+class Iommu_smmu_v2 : public Iommu
 {
 public:
   enum
@@ -64,7 +64,7 @@ public:
     Space_id& operator = (Space_id const &) = delete;
 
   private:
-    friend class Iommu;
+    friend class Iommu_smmu_v2;
 
     Vmid vmid(unsigned iommu_idx) const
     {
@@ -78,9 +78,9 @@ public:
       atomic_store(&_vmids[iommu_idx], vmid);
       // Ensure the new VMID of the page table is visible on all other cores.
       // Otherwise, a TLB flush on another core could see an outdated VMID, when
-      // executed shortly after we update the VMID in Iommu::un/bind(). This is
-      // because  there are no memory order guarantees as tlb_invalidate_vmid()
-      // is not guarded by the IOMMU lock.
+      // executed shortly after we update the VMID in Iommu_smmu_v2::un/bind().
+      // This is because there are no memory order guarantees as
+      // tlb_invalidate_vmid() is not guarded by the IOMMU lock.
       // TODO: Is this barrier adequate to prevent the above scenario?
       Mem::dsb();
     }
@@ -88,7 +88,7 @@ public:
     // Use a separate VMID for each IOMMU. This has the advantage that we only
     // flush on IOMMUs where the page table is really bound.
     Vmid _vmids[Max_iommus];
-    static_assert(sizeof(Iommu::Vmid) >= sizeof(Unsigned32),
+    static_assert(sizeof(Iommu_smmu_v2::Vmid) >= sizeof(Unsigned32),
                   "Memory accesses to VMIDs must be atomic, "
                   "therefore VMIDs must be at least 32-bit aligned.");
   };
@@ -134,6 +134,24 @@ private:
 
   Mmio_register_block &mmio_for_reg_space(Rs rs)
   { return rs == Rs::Gr0 ? _gr0 : _gr1; }
+
+  template<typename REG, Reg_access ACCESS = Reg_access::Atomic>
+  REG read_reg(unsigned index = 0)
+  {
+    return REG::template read<ACCESS>(mmio_for_reg_space(REG::reg_space()),
+                                      index);
+  }
+
+  template<typename REG, Reg_access ACCESS = Reg_access::Atomic>
+  void write_reg(REG reg, unsigned index = 0)
+  {
+    return reg.template write<ACCESS>(mmio_for_reg_space(REG::reg_space()),
+                                      index);
+  }
+
+  template<typename REG, Reg_access ACCESS = Reg_access::Atomic>
+  void write_reg(typename REG::Val_type value)
+  { return write_reg<REG, ACCESS>(REG::from_raw(value)); }
 
   struct Cr0 : public Smmu_reg<Cr0, Rs::Gr0, 0x000>
   {
@@ -273,7 +291,7 @@ private:
      * Va64 disabled: Region size is 2^(32 - T0SZ).
      * Va64 enabled: Region size is 2^(64 - T0SZ).
      */
-    CXX_BITFIELD_MEMBER(0, Iommu::Va64_support ? 5 : 3, t0sz, raw);
+    CXX_BITFIELD_MEMBER(0, Va64_support ? 5 : 3, t0sz, raw);
     /// Lookup start level.
     CXX_BITFIELD_MEMBER(6, 7, sl0, raw);
     /// Inner cacheability attributes for page table memory.
@@ -298,7 +316,7 @@ private:
   class Context_bank
   {
   private:
-    Iommu *_mmu;
+    Iommu_smmu_v2 *_mmu;
     Unsigned64 _pt_phys = 0;
     Space_id *_space_id = nullptr;
     Mmio_register_block _regs;
@@ -384,7 +402,7 @@ private:
         }
     }
 
-    void init(Iommu *mmu, Unsigned8 idx, void *reg_addr)
+    void init(Iommu_smmu_v2 *mmu, Unsigned8 idx, void *reg_addr)
     {
       _mmu = mmu;
       _idx = idx;
@@ -439,7 +457,7 @@ private:
           tcr.orgn0() = TCR_RGN_NC;
         }
 
-      if constexpr (Iommu::Va64_support)
+      if constexpr (Va64_support)
         {
           tcr.pasize() = address_size_encode(_mmu->_oas);
           // First page table is concatenated (10-bits), we skip level zero.
@@ -480,7 +498,7 @@ private:
   class Stream_mapping
   {
   private:
-    Iommu *_mmu;
+    Iommu_smmu_v2 *_mmu;
     Context_bank *_cb = nullptr;
     Unsigned32 _idx;
     Unsigned16 _sid;
@@ -498,7 +516,7 @@ private:
     Unsigned16 sid() const
     { return _sid; }
 
-    void init(Iommu *mmu, Unsigned32 idx, unsigned mask)
+    void init(Iommu_smmu_v2 *mmu, Unsigned32 idx, unsigned mask)
     {
       _mmu = mmu;
       _idx = idx;
@@ -664,6 +682,9 @@ private:
       }
   }
 
+public:
+  Iommu_smmu_v2() = default;
+
   /**
    * Configures and enables the IOMMU.
    *
@@ -679,18 +700,18 @@ private:
    */
   void setup_irqs(unsigned const *irqs, unsigned num_irqs, unsigned num_global_irqs);
 
-public:
-  Iommu() = default;
+private:
+  static void init_platform();
 };
 
 // ------------------------------------------------------------------
-IMPLEMENTATION [iommu]:
+IMPLEMENTATION [iommu_arm_smmu_v2]:
 
 #include "panic.h"
 
 PUBLIC
 int
-Iommu::bind(Unsigned32 stream_id, Address pt_phys, Space_id *space_id)
+Iommu_smmu_v2::bind(Unsigned32 stream_id, Address pt_phys, Space_id *space_id)
 {
   auto g = lock_guard(_lock);
 
@@ -714,7 +735,7 @@ Iommu::bind(Unsigned32 stream_id, Address pt_phys, Space_id *space_id)
 
 PUBLIC
 int
-Iommu::unbind(Unsigned32 stream_id, Address pt_phys)
+Iommu_smmu_v2::unbind(Unsigned32 stream_id, Address pt_phys)
 {
   auto g = lock_guard(_lock);
 
@@ -741,7 +762,7 @@ Iommu::unbind(Unsigned32 stream_id, Address pt_phys)
 
 PUBLIC
 void
-Iommu::remove(Address pt_phys)
+Iommu_smmu_v2::remove(Address pt_phys)
 {
   auto g = lock_guard(_lock);
 
@@ -750,12 +771,12 @@ Iommu::remove(Address pt_phys)
     return;
 
   for (auto &smg: _sm)
-      smg.reset_if(cb);
+    smg.reset_if(cb);
 }
 
 IMPLEMENT
 void
-Iommu::setup(Version version, void *base_addr, unsigned mask)
+Iommu_smmu_v2::setup(Version version, void *base_addr, unsigned mask)
 {
   _version = version;
   _gr0 = Mmio_register_block(base_addr);
@@ -845,14 +866,14 @@ Iommu::setup(Version version, void *base_addr, unsigned mask)
 
 IMPLEMENT
 void
-Iommu::tlb_flush()
+Iommu_smmu_v2::tlb_flush()
 {
   tlb_invalidate_all();
 }
 
 PRIVATE static
 void
-Iommu::sync_pte()
+Iommu_smmu_v2::sync_pte()
 {
   // Ensure that PTE writes are visible to IOMMU. Only necessary if IOMMU
   // supports coherent page table walks, otherwise changed PTE entries are
@@ -864,7 +885,7 @@ Iommu::sync_pte()
 
 PRIVATE
 void
-Iommu::tlb_invalidate_all()
+Iommu_smmu_v2::tlb_invalidate_all()
 {
   sync_pte();
   // Invalidate all non-secure non-hyp TLB entries, which is equivalent to
@@ -876,7 +897,7 @@ Iommu::tlb_invalidate_all()
 
 PRIVATE
 void
-Iommu::tlb_invalidate_vmid(Vmid vmid)
+Iommu_smmu_v2::tlb_invalidate_vmid(Vmid vmid)
 {
   // When Dmar_space is not bound to a context bank, it has the invalid VMID.
   if (vmid != Invalid_vmid)
@@ -889,56 +910,34 @@ Iommu::tlb_invalidate_vmid(Vmid vmid)
 
 IMPLEMENT
 void
-Iommu::tlb_invalidate_space(Space_id const &space_id)
+Iommu_smmu_v2::tlb_invalidate_space(Space_id const &space_id)
 {
-  for (unsigned i = 0; i < Max_iommus; i++)
-    iommus()[i].tlb_invalidate_vmid(space_id.vmid(i));
+  for (Iommu *iommu : iommus())
+    // All registered IOMMUs are SMMUv2 in this configuration.
+    static_cast<Iommu_smmu_v2 *>(iommu)
+      ->tlb_invalidate_vmid(space_id.vmid(iommu->idx()));
 }
 
 PUBLIC inline
 unsigned
-Iommu::ipa_size() const
+Iommu_smmu_v2::ipa_size() const
 { return _ias; }
 
 // ------------------------------------------------------------------
-IMPLEMENTATION [iommu && !debug]:
-
-#include "irq_mgr.h"
-
-EXTENSION class Iommu
-{
-public:
-  enum
-  {
-    Debug      = 0,
-    Log_faults = 0,
-  };
-};
-
+IMPLEMENTATION [iommu_arm_smmu_v2 && !debug]:
 
 IMPLEMENT
 void
-Iommu::setup_irqs(unsigned const *, unsigned, unsigned)
+Iommu_smmu_v2::setup_irqs(unsigned const *, unsigned, unsigned)
 {
 }
 
 // ------------------------------------------------------------------
-IMPLEMENTATION [iommu && debug]:
+IMPLEMENTATION [iommu_arm_smmu_v2 && debug]:
 
-#include "config.h"
 #include "irq_mgr.h"
 #include "warn.h"
 #include <cstdio>
-
-EXTENSION class Iommu
-{
-public:
-  enum
-  {
-    Debug      = 1,
-    Log_faults = Warn::is_enabled(Warn_level::Info),
-  };
-};
 
 namespace {
 
@@ -974,7 +973,7 @@ void setup_irq(unsigned pin, T *obj, F func)
 
 PRIVATE
 void
-Iommu::handle_global_fault()
+Iommu_smmu_v2::handle_global_fault()
 {
   Gfsr gfsr = read_reg<Gfsr>();
   if (!gfsr.raw)
@@ -1000,7 +999,7 @@ Iommu::handle_global_fault()
 
 IMPLEMENT
 void
-Iommu::Context_bank::handle_fault()
+Iommu_smmu_v2::Context_bank::handle_fault()
 {
   Cb_fsr fsr = read_reg<Cb_fsr>();
   if (!fsr.raw)
@@ -1022,7 +1021,7 @@ Iommu::Context_bank::handle_fault()
 
 PRIVATE
 void
-Iommu::handle_context_fault()
+Iommu_smmu_v2::handle_context_fault()
 {
   for (auto &cb : _cb)
     cb.handle_fault();
@@ -1030,7 +1029,7 @@ Iommu::handle_context_fault()
 
 PRIVATE
 void
-Iommu::handle_fault()
+Iommu_smmu_v2::handle_fault()
 {
   handle_global_fault();
   handle_context_fault();
@@ -1038,7 +1037,8 @@ Iommu::handle_fault()
 
 IMPLEMENT
 void
-Iommu::setup_irqs(unsigned const *irqs, unsigned num_irqs, unsigned num_global_irqs)
+Iommu_smmu_v2::setup_irqs(unsigned const *irqs, unsigned num_irqs,
+                          unsigned num_global_irqs)
 {
   assert(num_irqs >= 1);
   assert(num_global_irqs <= num_irqs);
@@ -1052,13 +1052,13 @@ Iommu::setup_irqs(unsigned const *irqs, unsigned num_irqs, unsigned num_global_i
   // global faults as well as context faults.
   if (num_irqs == 1 && read_reg<Idr0>().numirpt() != 0)
     {
-      setup_irq(irqs[0], this, &Iommu::handle_fault);
+      setup_irq(irqs[0], this, &Iommu_smmu_v2::handle_fault);
       return;
     }
 
   // Setup global fault IRQs
   for (unsigned i = 0; i < num_global_irqs; i++)
-    setup_irq(irqs[i], this, &Iommu::handle_global_fault);
+    setup_irq(irqs[i], this, &Iommu_smmu_v2::handle_global_fault);
 
   // Setup context fault IRQs
   unsigned num_context_irqs = num_irqs - num_global_irqs;
@@ -1081,7 +1081,8 @@ Iommu::setup_irqs(unsigned const *irqs, unsigned num_irqs, unsigned num_global_i
       if (_version == Version::Smmu_v1)
         {
           // Not enough context IRQs, all context banks get the same IRQ.
-          setup_irq(irqs[num_global_irqs], this, &Iommu::handle_context_fault);
+          setup_irq(irqs[num_global_irqs], this,
+                    &Iommu_smmu_v2::handle_context_fault);
         }
       else
         {
@@ -1090,5 +1091,21 @@ Iommu::setup_irqs(unsigned const *irqs, unsigned num_irqs, unsigned num_global_i
                _cb.size(), num_context_irqs);
         }
     }
-
 }
+
+// ------------------------------------------------------------------
+IMPLEMENTATION [iommu_arm_smmu_v2]:
+
+#include "static_init.h"
+#include <cstdio>
+
+PUBLIC static
+void
+Iommu_smmu_v2::init()
+{
+  printf("IOMMU: Initialize SMMUv1/v2\n");
+
+  init_platform();
+}
+
+STATIC_INITIALIZE_P(Iommu_smmu_v2, IOMMU_INIT_PRIO);

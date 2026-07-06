@@ -1,4 +1,4 @@
-INTERFACE [iommu]:
+INTERFACE [iommu_arm_smmu_v2]:
 
 EXTENSION class Dmar_space
 {
@@ -6,7 +6,7 @@ EXTENSION class Dmar_space
   // Va64_support==true:  AArch64 page table format, with a concatenated root
   //                      page table (10-bits), which means we skip level zero.
   typedef Ptab::Tupel< Ptab::Traits< Unsigned64, 30,
-                                     Iommu::Va64_support ? 10 : 2, true>,
+                                     Iommu_smmu_v2::Va64_support ? 10 : 2, true>,
                        Ptab::Traits< Unsigned64, 21, 9, true>,
                        Ptab::Traits< Unsigned64, 12, 9, true> >::List Ptab_traits;
   class Dmar_pte_ptr :
@@ -36,11 +36,11 @@ EXTENSION class Dmar_space
   using Dmarpt_alloc = Kmem_slab_t<Dmar_pdir, sizeof(Dmar_pdir)>;
   static Dmarpt_alloc _dmarpt_alloc;
 
-  Iommu::Space_id _space_id;
+  Iommu_smmu_v2::Space_id _space_id;
 };
 
 // -----------------------------------------------------------
-IMPLEMENTATION [iommu]:
+IMPLEMENTATION [iommu_arm_smmu_v2]:
 
 #include "kmem.h"
 
@@ -64,28 +64,32 @@ IMPLEMENT
 void
 Dmar_space::tlb_flush_current_cpu()
 {
-  Iommu::tlb_invalidate_space(_space_id);
+  Iommu_smmu_v2::tlb_invalidate_space(_space_id);
 }
 
 IMPLEMENT
 int
 Dmar_space::bind_mmu(Iommu *mmu, Unsigned32 stream_id, Unsigned64 *max_addr)
 {
-  *max_addr = (Unsigned64{1} << mmu->ipa_size()) - 1;
-  return mmu->bind(stream_id, pt_phys_addr(), &_space_id);
+  // All registered IOMMUs are SMMUv2 in this configuration.
+  auto *smmu = static_cast<Iommu_smmu_v2 *>(mmu);
+  *max_addr = (Unsigned64{1} << smmu->ipa_size()) - 1;
+  return smmu->bind(stream_id, pt_phys_addr(), &_space_id);
 }
 
 IMPLEMENT
 int
 Dmar_space::unbind_mmu(Iommu *mmu, Unsigned32 stream_id)
 {
-  return mmu->unbind(stream_id, pt_phys_addr());
+  // All registered IOMMUs are SMMUv2 in this configuration.
+  return static_cast<Iommu_smmu_v2 *>(mmu)->unbind(stream_id, pt_phys_addr());
 }
 
 PRIVATE
 void
 Dmar_space::remove_from_all_iommus()
 {
-  for (auto &iommu : Iommu::iommus())
-    iommu.remove(pt_phys_addr());
+  for (Iommu *iommu : Iommu::iommus())
+    // All registered IOMMUs are SMMUv2 in this configuration.
+    static_cast<Iommu_smmu_v2 *>(iommu)->remove(pt_phys_addr());
 }

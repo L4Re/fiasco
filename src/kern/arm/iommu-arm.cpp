@@ -1,12 +1,19 @@
 INTERFACE [iommu]:
 
-#include "cxx/cxx_int"
-#include "cxx/static_vector"
-#include "tlbs.h"
+#include <cxx/cxx_int>
+#include <cxx/static_vector>
+#include "config.h"
 #include "mmio_register_block.h"
+#include "tlbs.h"
+#include "warn.h"
 
 /**
  * Common interface for all the different SMMU variations.
+ *
+ * Concrete SMMU drivers derive from this class. Each constructed driver
+ * instance automatically registers itself in the global IOMMU registry. The
+ * registration order defines the IOMMU index by which kernel and user space
+ * refer to an IOMMU.
  */
 class Iommu : public Tlb
 {
@@ -15,38 +22,49 @@ public:
   Iommu(Iommu const &) = delete;
   Iommu &operator = (Iommu const &) = delete;
 
-  enum { Max_iommus = CONFIG_ARM_IOMMU_MAX };
-  using Iommu_array = cxx::static_vector<Iommu>;
-  static Iommu *iommu(Unsigned16 iommu_idx);
-  static Iommu_array &iommus() { return _iommus; }
+  static constexpr bool Debug = Config::Jdb;
+  static constexpr bool Log_faults = Config::Jdb
+                                     && Warn::is_enabled(Warn_level::Info);
 
+  enum { Max_iommus = CONFIG_ARM_IOMMU_MAX };
+  using Iommu_array = cxx::static_vector<Iommu *>;
+
+  static Iommu *iommu(Unsigned16 iommu_idx)
+  { return iommu_idx < _num_iommus ? _iommus[iommu_idx] : nullptr; }
+
+  static Iommu_array iommus()
+  { return Iommu_array(_iommus, _num_iommus); }
+
+  /// Index of this IOMMU in the registry.
   unsigned idx() const
-  { return this - _iommus.begin(); }
+  { return _idx; }
 
   static constexpr bool Coherent = TAG_ENABLED(arm_iommu_coherent);
 
 private:
-  /// Platform specific IOMMU initialization.
-  static void init_platform();
-  /// Common IOMMU initialization.
-  static void init_common();
-  static Iommu_array _iommus;
+  static Iommu *_iommus[Max_iommus];
+  static unsigned _num_iommus;
 
-private:
-  enum class Rs;
+  Unsigned16 _idx;
 
-  enum class Reg_access {
+protected:
+  /// Register this IOMMU in the global registry ordered by the object
+  /// construction order.
+  Iommu();
+
+  enum class Reg_access
+  {
     Atomic,
     Non_atomic,
   };
 
-  template<typename T, Rs RS, Address OFFSET, typename REG = Unsigned32,
+  template<typename T, auto RS, Address OFFSET, typename REG = Unsigned32,
            unsigned STRIDE = sizeof(REG)>
   struct Smmu_reg_ro
   {
     using Val_type = REG;
 
-    static Rs reg_space()
+    static auto reg_space()
     { return RS; }
 
     static T from_raw(REG raw)
@@ -69,7 +87,7 @@ private:
     REG raw = 0;
   };
 
-  template<typename T, Rs RS, Address OFFSET, typename REG = Unsigned32,
+  template<typename T, auto RS, Address OFFSET, typename REG = Unsigned32,
            unsigned STRIDE = sizeof(REG)>
   struct Smmu_reg : public Smmu_reg_ro<T, RS, OFFSET, REG, STRIDE>
   {
@@ -83,179 +101,23 @@ private:
         return reg.write_non_atomic(this->raw);
     }
   };
-
-  template<typename REG, Reg_access ACCESS = Reg_access::Atomic>
-  REG read_reg(unsigned index = 0)
-  {
-    return REG::template read<ACCESS>(mmio_for_reg_space(REG::reg_space()), index);
-  }
-
-  template<typename REG, Reg_access ACCESS = Reg_access::Atomic>
-  void write_reg(REG reg, unsigned index = 0)
-  {
-    return reg.template write<ACCESS>(mmio_for_reg_space(REG::reg_space()), index);
-  }
-
-  template<typename REG, Reg_access ACCESS = Reg_access::Atomic>
-  void write_reg(typename REG::Val_type value)
-  { return write_reg<REG, ACCESS>(REG::from_raw(value)); }
 };
-
-// ------------------------------------------------------------------
-IMPLEMENTATION [iommu && dt]:
-
-#include "dt.h"
-#include "kmem_mmio.h"
-
-PRIVATE static
-bool
-Iommu::init_platform_dt()
-{
-  unsigned i = 0;
-  Dt::nodes_by_compatible("arm,smmu-v3", [&](Dt::Node n)
-    {
-      if (n.is_enabled())
-        ++i;
-    });
-
-  printf("Number of arm,smmu-v3: %d\n", i);
-
-  if (i == 0)
-    return false;
-
-  _iommus = Iommu_array(new Boot_object<Iommu>[i], i);
-
-  i = 0;
-  Dt::nodes_by_compatible("arm,smmu-v3", [&](Dt::Node n)
-    {
-      if (n.is_enabled())
-        {
-          unsigned eventq_irq = Dt::get_arm_gic_irq(n, "eventq");
-          unsigned gerror_irq = Dt::get_arm_gic_irq(n, "gerror");
-
-          if (eventq_irq == ~0u) // Event logging is optional
-            eventq_irq = 0;
-          if (gerror_irq == ~0u) // We want error reporting
-            return;
-
-          uint64_t base, size;
-          bool ret = n.get_reg(0, &base, &size);
-          if (ret)
-            {
-              _iommus[i].setup(Kmem_mmio::map(base, size),
-                               eventq_irq, gerror_irq);
-              ++i;
-            }
-        }
-    });
-
-  return true;
-}
-
-// ------------------------------------------------------------------
-IMPLEMENTATION [iommu && !dt]:
-
-PRIVATE static
-bool
-Iommu::init_platform_dt()
-{ return false; }
-
-// ------------------------------------------------------------------
-IMPLEMENTATION [iommu && arm_acpi]:
-
-#include "acpi.h"
-#include "kmem.h"
-#include "panic.h"
-
-PRIVATE static
-bool
-Iommu::init_platform_acpi()
-{
-  auto *iort = Acpi::find<Acpi_iort const *>("IORT");
-  if (!iort)
-    {
-      WARNX(Error, "SBSA: no IORT found!\n");
-      return false;
-    }
-
-  unsigned num = 0;
-  for (auto const &node : *iort)
-    {
-      if (node->type == Acpi_iort::Node::Smmu_v2)
-        panic("SBSA: SMMUv2 not supported!");
-
-      if (node->type == Acpi_iort::Node::Smmu_v3)
-        num++;
-    }
-
-  _iommus = Iommu_array(new Boot_object<Iommu>[num], num);
-
-  unsigned i = 0;
-  for (auto const &node : *iort)
-    {
-      if (node->type != Acpi_iort::Node::Smmu_v3)
-        continue;
-
-      auto const *smmu = static_cast<Acpi_iort::Smmu_v3 const *>(node);
-      void *v = Kmem_mmio::map(smmu->base_addr, 0x100000);
-      _iommus[i++].setup(v, smmu->gsiv_event, smmu->gsiv_gerr);
-    }
-
-  return true;
-}
-
-// ------------------------------------------------------------------
-IMPLEMENTATION [iommu && !arm_acpi]:
-
-PRIVATE static
-bool
-Iommu::init_platform_acpi()
-{ return false; }
-
-// ------------------------------------------------------------------
-IMPLEMENTATION [iommu && (dt || arm_acpi)]:
-
-#include "dt.h"
-
-IMPLEMENT
-void
-Iommu::init_platform()
-{
-  if (Dt::have_fdt())
-    init_platform_dt();
-  else
-    init_platform_acpi();
-}
 
 // ------------------------------------------------------------------
 IMPLEMENTATION [iommu]:
 
-#include "static_init.h"
-#include <cstdio>
+#include "panic.h"
 
-constinit Iommu::Iommu_array Iommu::_iommus;
+constinit Iommu *Iommu::_iommus[Iommu::Max_iommus];
+constinit unsigned Iommu::_num_iommus;
 
-IMPLEMENT_DEFAULT
-Iommu*
-Iommu::iommu(Unsigned16 iommu_idx)
-{ return iommu_idx < iommus().size() ? &iommus()[iommu_idx] : nullptr; }
-
-IMPLEMENT_DEFAULT
-void
-Iommu::init_common()
-{}
-
-PUBLIC static
-void
-Iommu::init()
+IMPLEMENT
+Iommu::Iommu()
 {
-  printf("IOMMU: Initialize\n");
+  if (_num_iommus >= Max_iommus)
+    panic("IOMMU: Platform provided too many IOMMUs (max %u)!",
+          static_cast<unsigned>(Max_iommus));
 
-  init_platform();
-  if (_iommus.size() > Max_iommus)
-    panic("Platform provided too many IOMMUs (%u)!", _iommus.size());
-
-  init_common();
+  _idx = _num_iommus++;
+  _iommus[_idx] = this;
 }
-
-STATIC_INITIALIZE_P(Iommu, IOMMU_INIT_PRIO);

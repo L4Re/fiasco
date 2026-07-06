@@ -1,4 +1,4 @@
-INTERFACE [iommu && iommu_arm_smmu_v3]:
+INTERFACE [iommu_arm_smmu_v3]:
 
 #include "types.h"
 #include "spin_lock.h"
@@ -35,7 +35,7 @@ class Iommu_domain;
  * Interrupts are used to handle errors, and to log faults if the warning level
  * is high enough.
  */
-EXTENSION class Iommu
+class Iommu_smmu_v3 : public Iommu
 {
 public:
   enum
@@ -72,6 +72,8 @@ public:
   static void tlb_invalidate_domain(Iommu_domain const &domain);
 
 private:
+  enum { Stage2 = TAG_ENABLED(arm_iommu_stage2) };
+
   friend class Iommu_domain;
 
   enum
@@ -106,6 +108,24 @@ private:
 
   Mmio_register_block &mmio_for_reg_space(Rs rs)
   { return rs == Rs::Rp0 ? _rp0 : _rp1; }
+
+  template<typename REG, Reg_access ACCESS = Reg_access::Atomic>
+  REG read_reg(unsigned index = 0)
+  {
+    return REG::template read<ACCESS>(mmio_for_reg_space(REG::reg_space()),
+                                      index);
+  }
+
+  template<typename REG, Reg_access ACCESS = Reg_access::Atomic>
+  void write_reg(REG reg, unsigned index = 0)
+  {
+    return reg.template write<ACCESS>(mmio_for_reg_space(REG::reg_space()),
+                                      index);
+  }
+
+  template<typename REG, Reg_access ACCESS = Reg_access::Atomic>
+  void write_reg(typename REG::Val_type value)
+  { return write_reg<REG, ACCESS>(REG::from_raw(value)); }
 
   struct Idr0 : public Smmu_reg_ro<Idr0, Rs::Rp0, 0x000>
   {
@@ -600,7 +620,7 @@ private:
     public:
       enum { Item_size = sizeof(T) };
 
-      void init(Iommu *iommu, unsigned num_item_bits)
+      void init(Iommu_smmu_v3 *iommu, unsigned num_item_bits)
       {
         _iommu = iommu;
         _num_item_bits = num_item_bits;
@@ -683,7 +703,7 @@ private:
       }
 
     protected:
-      Iommu *_iommu;
+      Iommu_smmu_v3 *_iommu;
       Mem_chunk _mem;
       /// Next write index if WRITE, next read index otherwise.
       /// Unlike in the hardware register, the index stored in this field is not
@@ -1034,6 +1054,9 @@ private:
   /// ASID allocator shared between all SMMUs.
   static Static_object<Asid_alloc> _asid_alloc;
 
+public:
+  Iommu_smmu_v3() = default;
+
   /**
    * Configure and enable the SMMU.
    *
@@ -1043,8 +1066,10 @@ private:
    */
   void setup(void *base_addr, unsigned eventq_irq, unsigned gerror_irq);
 
-public:
-  Iommu() = default;
+private:
+  static unsigned init_platform_acpi();
+  static unsigned init_platform_dt();
+  static void init_platform();
 };
 
 /**
@@ -1064,11 +1089,13 @@ public:
   Iommu_domain(Iommu_domain &&) = delete;
   Iommu_domain operator = (Iommu_domain &&) = delete;
 
-  Iommu::Asid get_asid() const { return Iommu::_asid_alloc->get_id(&_asid); }
-  Iommu::Asid get_or_alloc_asid() { return Iommu::_asid_alloc->get_or_alloc_id(&_asid); }
+  Iommu_smmu_v3::Asid get_asid() const
+  { return Iommu_smmu_v3::_asid_alloc->get_id(&_asid); }
+  Iommu_smmu_v3::Asid get_or_alloc_asid()
+  { return Iommu_smmu_v3::_asid_alloc->get_or_alloc_id(&_asid); }
 
 private:
-  friend class Iommu;
+  friend class Iommu_smmu_v3;
 
   enum : Unsigned32
   {
@@ -1106,7 +1133,7 @@ private:
 
   /// Address space identifier of this domain. Allocated when the domain is
   /// bound for the first time, freed only on destruction.
-  Iommu::Asid _asid = Iommu::Invalid_asid;
+  Iommu_smmu_v3::Asid _asid = Iommu_smmu_v3::Invalid_asid;
 
   /**
    * Track on which SMMUs the domain was bound for how many stream IDs.
@@ -1117,8 +1144,8 @@ private:
    * result in additional overhead in the following operations:
    *   - Flushing the TLB for the domain might execute a TLB flush on an SMMU
    *     the domain is no longer bound to.
-   *   - `Iommu::remove()` has to scan the entire stream table, because the
-   *     `count == 0` early return condition is not satisfied.
+   *   - `Iommu_smmu_v3::remove()` has to scan the entire stream table, because
+   *     the `count == 0` early return condition is not satisfied.
    */
   Unsigned32 _bindings[Iommu::Max_iommus] = { 0 };
 
@@ -1128,37 +1155,39 @@ private:
 };
 
 // ------------------------------------------------------------------
-INTERFACE [iommu && iommu_arm_smmu_v3 && !arm_iommu_stage2]:
-
-EXTENSION class Iommu { enum { Stage2 = 0 }; };
+INTERFACE [iommu_arm_smmu_v3 && !arm_iommu_stage2]:
 
 EXTENSION class Iommu_domain
 {
 private:
-  Iommu::Cd const *get_or_init_cd(unsigned ias, unsigned virt_addr_size,
-                                  Address pt_phys_addr);
+  Iommu_smmu_v3::Cd const *get_or_init_cd(unsigned ias, unsigned virt_addr_size,
+                                          Address pt_phys_addr);
 
   /// Context descriptor, used for all bindings of this domain (across SMMUs
   /// and across stream IDs). Initialized when the domain is bound for the first
   /// time. The context descriptor is only required if the SMMU does not
   /// support stage 2 translation.
-  Iommu::Cd _cd;
+  Iommu_smmu_v3::Cd _cd;
 };
 
 // ------------------------------------------------------------------
-INTERFACE [iommu && iommu_arm_smmu_v3 && arm_iommu_stage2]:
+IMPLEMENTATION [iommu_arm_smmu_v3]:
 
-EXTENSION class Iommu { enum { Stage2 = 1 }; };
-
-// ------------------------------------------------------------------
-IMPLEMENTATION [iommu && iommu_arm_smmu_v3]:
-
-#include "cpu.h"
 #include "feature.h"
 
-Static_object<Iommu::Asid_alloc> Iommu::_asid_alloc;
+Static_object<Iommu_smmu_v3::Asid_alloc> Iommu_smmu_v3::_asid_alloc;
 
 KIP_KERNEL_FEATURE("arm,smmu-v3");
+
+IMPLEMENT_DEFAULT static
+unsigned
+Iommu_smmu_v3::init_platform_acpi()
+{ return 0; }
+
+IMPLEMENT_DEFAULT static
+unsigned
+Iommu_smmu_v3::init_platform_dt()
+{ return 0; }
 
 /**
  * Send commands to the SMMU, i.e. write them to the command queue.
@@ -1170,8 +1199,8 @@ KIP_KERNEL_FEATURE("arm,smmu-v3");
  * \return The wait index for the submitted commands.
  */
 PRIVATE template<unsigned N>
-Iommu::Cmd_queue::Index
-Iommu::send_cmds(Cmd const (&cmds)[N])
+Iommu_smmu_v3::Cmd_queue::Index
+Iommu_smmu_v3::send_cmds(Cmd const (&cmds)[N])
 {
   auto g = lock_guard(_cmd_queue_lock);
 
@@ -1210,7 +1239,7 @@ Iommu::send_cmds(Cmd const (&cmds)[N])
  */
 PRIVATE
 void
-Iommu::send_cmd_sync(Cmd const &cmd)
+Iommu_smmu_v3::send_cmd_sync(Cmd const &cmd)
 {
   Cmd sync_cmd = Cmd::sync(Cmd::Compl_signal_wfe);
   Cmd_queue::Index wait_index = send_cmds({cmd, sync_cmd});
@@ -1234,7 +1263,7 @@ Iommu::send_cmd_sync(Cmd const &cmd)
  */
 PRIVATE
 void
-Iommu::wait_cmd_queue(Cmd_queue::Index wait_index)
+Iommu_smmu_v3::wait_cmd_queue(Cmd_queue::Index wait_index)
 {
   Wait_warn_timeout wait_warn_timeout;
   // Has SMMU consumed all commands up to the wait index?
@@ -1263,8 +1292,8 @@ Iommu::wait_cmd_queue(Cmd_queue::Index wait_index)
  * \param alloc      Allocate second-level stream table.
  */
 PRIVATE
-Iommu::Ste_ptr
-Iommu::lookup_stream_table_entry(Unsigned32 stream_id, bool alloc)
+Iommu_smmu_v3::Ste_ptr
+Iommu_smmu_v3::lookup_stream_table_entry(Unsigned32 stream_id, bool alloc)
 {
   assert(stream_id < num_of_stream_ids());
 
@@ -1312,8 +1341,8 @@ Iommu::lookup_stream_table_entry(Unsigned32 stream_id, bool alloc)
 }
 
 PRIVATE
-Iommu::Ste_ptr
-Iommu::iter_ste_tables(Unsigned32 *stream_id, Unsigned32 *table_size) const
+Iommu_smmu_v3::Ste_ptr
+Iommu_smmu_v3::iter_ste_tables(Unsigned32 *stream_id, Unsigned32 *table_size) const
 {
   if (!_strtab_2level)
     {
@@ -1343,8 +1372,8 @@ Iommu::iter_ste_tables(Unsigned32 *stream_id, Unsigned32 *table_size) const
 /// Determine state that the combination of the STE fields `valid` and `config`
 /// corresponds to.
 PRIVATE static inline
-Iommu::Ste_state
-Iommu::ste_state(bool valid, Unsigned8 config)
+Iommu_smmu_v3::Ste_state
+Iommu_smmu_v3::ste_state(bool valid, Unsigned8 config)
 {
   if (valid)
     {
@@ -1358,8 +1387,8 @@ Iommu::ste_state(bool valid, Unsigned8 config)
 
 /// Determine state that STE is currently in.
 PRIVATE static inline
-Iommu::Ste_state
-Iommu::ste_state(Ste_ptr ste_ptr)
+Iommu_smmu_v3::Ste_state
+Iommu_smmu_v3::ste_state(Ste_ptr ste_ptr)
 {
   Ste ste = ste_ptr.atomic_read_status();
   return ste_state(ste.v(), ste.config());
@@ -1390,8 +1419,8 @@ Iommu::ste_state(Ste_ptr ste_ptr)
  *         already in `Exclusive` state.
  */
 PRIVATE
-Iommu::Acquire_result
-Iommu::acquire_ste(Ste_ptr ste)
+Iommu_smmu_v3::Acquire_result
+Iommu_smmu_v3::acquire_ste(Ste_ptr ste)
 {
   // The value we read here might be out-of-date if user-space does concurrent
   // bind/unbinds on the same stream id. If such a stale STE state is Exclusive,
@@ -1437,8 +1466,8 @@ Iommu::acquire_ste(Ste_ptr ste)
  */
 PRIVATE
 bool
-Iommu::acquire_ste_if_bound(Ste_ptr ste, Iommu_domain const &domain,
-                            Address pt_phys_addr)
+Iommu_smmu_v3::acquire_ste_if_bound(Ste_ptr ste, Iommu_domain const &domain,
+                                    Address pt_phys_addr)
 {
   if (ste_state(ste) != Ste_state::Valid)
     // Not a valid STE!
@@ -1478,7 +1507,7 @@ Iommu::acquire_ste_if_bound(Ste_ptr ste, Iommu_domain const &domain,
  */
 PRIVATE
 void
-Iommu::release_ste(Ste_ptr ste)
+Iommu_smmu_v3::release_ste(Ste_ptr ste)
 {
   // Must not be valid at this point, must only write invalid STEs (in addition,
   // flush must have been completed), otherwise the SMMU might observe an
@@ -1486,7 +1515,7 @@ Iommu::release_ste(Ste_ptr ste)
   assert(!ste->v());
 
   // Erase TTB or S1ContextPtr.
-  if constexpr (Iommu::Stage2)
+  if constexpr (Stage2)
     ste->s2_ttb() = 0;
   else
     ste->s1_context_ptr() = 0;
@@ -1501,7 +1530,7 @@ Iommu::release_ste(Ste_ptr ste)
 
 PRIVATE
 void
-Iommu::flush_ste(Ste_ptr ste, Unsigned32 stream_id)
+Iommu_smmu_v3::flush_ste(Ste_ptr ste, Unsigned32 stream_id)
 {
   // Ensure that the write that marked the stream table entry as invalid is
   // observable by the SMMU.
@@ -1518,7 +1547,7 @@ Iommu::flush_ste(Ste_ptr ste, Unsigned32 stream_id)
  */
 PRIVATE
 bool
-Iommu::delete_binding_and_invalidate_tlb(Iommu_domain &domain)
+Iommu_smmu_v3::delete_binding_and_invalidate_tlb(Iommu_domain &domain)
 {
   if (domain.del_binding(this) != 0)
     return false;
@@ -1539,7 +1568,7 @@ Iommu::delete_binding_and_invalidate_tlb(Iommu_domain &domain)
  */
 PRIVATE template<typename T> static inline
 void
-Iommu::make_observable(T *start, T *end = nullptr)
+Iommu_smmu_v3::make_observable(T *start, T *end = nullptr)
 {
   if constexpr (Iommu::Coherent)
     Mem::wmb(); // dmbist
@@ -1556,7 +1585,7 @@ Iommu::make_observable(T *start, T *end = nullptr)
  */
 PRIVATE template<typename T> static inline
 void
-Iommu::make_observable_before_cmd(T *start, T *end = nullptr)
+Iommu_smmu_v3::make_observable_before_cmd(T *start, T *end = nullptr)
 {
   // Putting the command into the command queue already includes a memory
   // barrier in case the SMMU is cache coherent, so we only have to act in the
@@ -1590,8 +1619,8 @@ Iommu::make_observable_before_cmd(T *start, T *end = nullptr)
  */
 PUBLIC
 int
-Iommu::bind(Unsigned32 stream_id, Iommu_domain &domain, Address pt_phys_addr,
-            unsigned virt_addr_size, unsigned start_level)
+Iommu_smmu_v3::bind(Unsigned32 stream_id, Iommu_domain &domain, Address pt_phys_addr,
+                    unsigned virt_addr_size, unsigned start_level)
 {
   if (stream_id >= num_of_stream_ids())
     return -L4_err::ERange;
@@ -1618,7 +1647,7 @@ Iommu::bind(Unsigned32 stream_id, Iommu_domain &domain, Address pt_phys_addr,
     }
 
   // Additional domain sync to ensure that STE is visible for unlocked access in
-  // the Iommu::remove() method.
+  // the Iommu_smmu_v3::remove() method.
   domain.sync_with_domain_state();
 
   return 0;
@@ -1644,7 +1673,8 @@ Iommu::bind(Unsigned32 stream_id, Iommu_domain &domain, Address pt_phys_addr,
  */
 PUBLIC
 int
-Iommu::unbind(Unsigned32 stream_id, Iommu_domain &domain, Address pt_phys_addr)
+Iommu_smmu_v3::unbind(Unsigned32 stream_id, Iommu_domain &domain,
+                      Address pt_phys_addr)
 {
   if (stream_id >= num_of_stream_ids())
     return -L4_err::ERange;
@@ -1676,7 +1706,7 @@ Iommu::unbind(Unsigned32 stream_id, Iommu_domain &domain, Address pt_phys_addr)
  */
 PUBLIC
 void
-Iommu::remove(Iommu_domain &domain, Address pt_phys_addr)
+Iommu_smmu_v3::remove(Iommu_domain &domain, Address pt_phys_addr)
 {
   // Ensure we see the up-to-date domain state and STEs, assuming that no new
   // bindings are created for the domain concurrently.
@@ -1716,8 +1746,8 @@ Iommu::remove(Iommu_domain &domain, Address pt_phys_addr)
       base_stream_id += table_size;
     }
 
-  // After a domain has been removed with Iommu::remove() it can be deleted
-  // afterwards. But if the domain's binding count is out-of-sync,
+  // After a domain has been removed with Iommu_smmu_v3::remove() it can be
+  // deleted afterwards. But if the domain's binding count is out-of-sync,
   // delete_binding_and_invalidate_tlb() call in the above loop never executes a
   // TLB flush. So to ensure that no entries with the domain's ASID, which gets
   // freed for reallocation once the domain is deleted, remain in the SMMU's
@@ -1733,7 +1763,7 @@ Iommu::remove(Iommu_domain &domain, Address pt_phys_addr)
  */
 PRIVATE
 void
-Iommu::setup_strtab_linear()
+Iommu_smmu_v3::setup_strtab_linear()
 {
   unsigned strtab_size = num_of_stream_ids() * sizeof(Ste);
   _strtab = Mem_chunk::alloc_zmem(strtab_size, Strtab_base::align(strtab_size));
@@ -1758,7 +1788,7 @@ Iommu::setup_strtab_linear()
  */
 PRIVATE
 void
-Iommu::setup_strtab_2level()
+Iommu_smmu_v3::setup_strtab_2level()
 {
   if (_num_stream_id_bits > Stream_table_max_bits)
     {
@@ -1790,7 +1820,7 @@ Iommu::setup_strtab_2level()
 
 IMPLEMENT
 void
-Iommu::setup(void *base_addr, unsigned eventq_irq, unsigned gerror_irq)
+Iommu_smmu_v3::setup(void *base_addr, unsigned eventq_irq, unsigned gerror_irq)
 {
   _rp0 = Mmio_register_block(base_addr);
   _rp1 = Mmio_register_block(offset_cast<void *>(base_addr, 0x10000));
@@ -1840,7 +1870,7 @@ Iommu::setup(void *base_addr, unsigned eventq_irq, unsigned gerror_irq)
              idr5.oas().get(), idr5.gran4k().get(), idr5.vax().get());
     }
 
-  if constexpr (Iommu::Stage2)
+  if constexpr (Stage2)
     {
       if (!idr0.s2p())
         panic("IOMMU: SMMU does not support stage 2 translation.");
@@ -1936,7 +1966,7 @@ Iommu::setup(void *base_addr, unsigned eventq_irq, unsigned gerror_irq)
  */
 IMPLEMENT
 void
-Iommu::tlb_invalidate_domain(Iommu_domain const &domain)
+Iommu_smmu_v3::tlb_invalidate_domain(Iommu_domain const &domain)
 {
   // No additional memory barrier necessary to ensure that page tables are
   // visible to the SMMU:
@@ -1951,36 +1981,48 @@ Iommu::tlb_invalidate_domain(Iommu_domain const &domain)
   // setting up the STE for the binding.
   domain.sync_with_domain_state();
 
-  for (Iommu &iommu : Iommu::iommus())
+  for (Iommu *iommu : Iommu::iommus())
     {
       // Only invalidate TLB for the SMMUs this domain is bound to.
-      if (domain.is_bound(&iommu))
+      if (domain.is_bound(iommu))
         {
           auto asid = domain.get_asid();
 
           // OPTIMIZE: Wait for completion on all SMMUs in parallel?
-          iommu.tlb_invalidate_asid(asid);
+          // All registered IOMMUs are SMMUv3 in this configuration.
+          static_cast<Iommu_smmu_v3 *>(iommu)->tlb_invalidate_asid(asid);
         }
     }
 }
 
-IMPLEMENT_OVERRIDE
+/**
+ * Set up the ASID allocator shared between all SMMUs, limited to the ASID
+ * range supported by all of them.
+ *
+ * Called from Iommu_smmu_v3::init() once all SMMUs are set up.
+ */
+PUBLIC static
 void
-Iommu::init_common()
+Iommu_smmu_v3::init_asid_alloc()
 {
   if (!Iommu::iommus().size())
     return;
 
-  Asid last_asid = Last_asid;
-  for (Iommu &iommu : iommus())
-    {
-      last_asid = min(last_asid, (Asid{1U} << iommu._num_asid_bits) - 1);
+  // All registered IOMMUs are SMMUv3 in this configuration.
+  auto smmu_at = [](unsigned idx)
+  { return static_cast<Iommu_smmu_v3 *>(Iommu::iommus()[idx]); };
 
-      if (iommu._ias != Iommu::iommus()[0]._ias)
+  Asid last_asid = Last_asid;
+  for (unsigned i = 0; i < Iommu::iommus().size(); i++)
+    {
+      Iommu_smmu_v3 *iommu = smmu_at(i);
+      last_asid = min(last_asid, (Asid{1U} << iommu->_num_asid_bits) - 1);
+
+      if (iommu->_ias != smmu_at(0)->_ias)
         // If the assumption of a common IAS across all SMMUs does not hold,
         // we have to use a separate context descriptor per SMMU.
         panic("IOMMU: Intermediate address size differs between IOMMUs: %u vs. %u\n",
-              Iommu::iommus()[0]._ias, iommu._ias);
+              smmu_at(0)->_ias, iommu->_ias);
     }
 
   if constexpr (Iommu::Debug)
@@ -1992,12 +2034,12 @@ Iommu::init_common()
 IMPLEMENT
 Iommu_domain::~Iommu_domain()
 {
-  Iommu::_asid_alloc->free_id_if_valid(&_asid);
+  Iommu_smmu_v3::_asid_alloc->free_id_if_valid(&_asid);
 }
 
 IMPLEMENT
 void
-Iommu::tlb_flush()
+Iommu_smmu_v3::tlb_flush()
 {
   // No additional memory barrier necessary to ensure that page tables are
   // visible to the SMMU:
@@ -2063,9 +2105,9 @@ Iommu_domain::del_binding(Iommu const *iommu)
  */
 PRIVATE
 int
-Iommu::configure_ste(Ste_ptr ste, Unsigned32 stream_id, Iommu_domain &domain,
-                     Address pt_phys_addr, unsigned virt_addr_size,
-                     unsigned start_level)
+Iommu_smmu_v3::configure_ste(Ste_ptr ste, Unsigned32 stream_id, Iommu_domain &domain,
+                             Address pt_phys_addr, unsigned virt_addr_size,
+                             unsigned start_level)
 {
   // Acquire exclusive access to STE.
   switch (acquire_ste(ste))
@@ -2120,8 +2162,8 @@ Iommu::configure_ste(Ste_ptr ste, Unsigned32 stream_id, Iommu_domain &domain,
  */
 PRIVATE
 int
-Iommu::deconfigure_ste(Ste_ptr ste, Unsigned32 stream_id, Iommu_domain &domain,
-                       Address pt_phys_addr)
+Iommu_smmu_v3::deconfigure_ste(Ste_ptr ste, Unsigned32 stream_id,
+                               Iommu_domain &domain, Address pt_phys_addr)
 {
   // Acquire exclusive access to STE if it is bound the domain.
   if (acquire_ste_if_bound(ste, domain, pt_phys_addr))
@@ -2138,9 +2180,9 @@ Iommu::deconfigure_ste(Ste_ptr ste, Unsigned32 stream_id, Iommu_domain &domain,
   // 'Exclusive` access to it, but has not yet started/completed the flush
   // (INV+SYNC) on the SMMU.
   // Returning L4_err::EBusy here is not an option if we are called from
-  // Iommu::remove(). Because once we return from remove(), the domain must no
-  // longer be referenced by any Valid entry (as seen by the SMMU, so flush
-  // must have been completed).
+  // Iommu_smmu_v3::remove(). Because once we return from remove(), the domain
+  // must no longer be referenced by any Valid entry (as seen by the SMMU, so
+  // flush must have been completed).
   if (ste_state(ste) == Ste_state::Invalid)
     // STE is in Invalid state, so we know a flush has already been completed,
     // since release_ste() resets Ste::2_ttb/s1_context_ptr only AFTER the flush
@@ -2168,11 +2210,12 @@ Iommu::deconfigure_ste(Ste_ptr ste, Unsigned32 stream_id, Iommu_domain &domain,
 }
 
 // -----------------------------------------------------------
-IMPLEMENTATION [iommu && iommu_arm_smmu_v3 && !arm_iommu_stage2]:
+IMPLEMENTATION [iommu_arm_smmu_v3 && !arm_iommu_stage2]:
 
 IMPLEMENT
-Iommu::Cd const *
-Iommu_domain::get_or_init_cd(unsigned ias, unsigned virt_addr_size, Address pt_phys_addr)
+Iommu_smmu_v3::Cd const *
+Iommu_domain::get_or_init_cd(unsigned ias, unsigned virt_addr_size,
+                             Address pt_phys_addr)
 {
   auto g = lock_guard(_lock);
 
@@ -2181,21 +2224,21 @@ Iommu_domain::get_or_init_cd(unsigned ias, unsigned virt_addr_size, Address pt_p
     return &_cd;
 
   unsigned long asid = get_or_alloc_asid();
-  if (asid == Iommu::Invalid_asid)
+  if (asid == Iommu_smmu_v3::Invalid_asid)
     // No ASID available.
     return nullptr;
 
   // Region size is 2^(64 - T0SZ) -> T0SZ = 64 - input_address_size
   _cd.t0sz() = 64 - virt_addr_size;
   _cd.tg0() = 0; // 4k
-  _cd.ir0() = Iommu::Cr1::Cache_wb;
-  _cd.or0() = Iommu::Cr1::Cache_wb;
-  _cd.sh0() = Iommu::Cr1::Share_is;
+  _cd.ir0() = Iommu_smmu_v3::Cr1::Cache_wb;
+  _cd.or0() = Iommu_smmu_v3::Cr1::Cache_wb;
+  _cd.sh0() = Iommu_smmu_v3::Cr1::Share_is;
   _cd.epd0() = 0; // Enable TT0 translation table walk.
   _cd.endi() = 0; // Translation table endianness is little endian.
   _cd.epd1() = 1; // Disable TT1 translation table walk.
   _cd.v() = 1; // Valid
-  _cd.ips() = Iommu::address_size_encode(ias);
+  _cd.ips() = Iommu_smmu_v3::address_size_encode(ias);
   _cd.affd() = 1; // An Access flag fault never occurs.
   _cd.wxn() = 0;
   _cd.uwxn() = 0;
@@ -2211,29 +2254,29 @@ Iommu_domain::get_or_init_cd(unsigned ias, unsigned virt_addr_size, Address pt_p
   _cd.aset() = 1;
   _cd.asid() = asid;
   _cd.ttb0() = pt_phys_addr;
-  _cd.mair0() = Iommu::Mair0_bits;
-  _cd.mair1() = Iommu::Mair1_bits;
+  _cd.mair0() = Iommu_smmu_v3::Mair0_bits;
+  _cd.mair1() = Iommu_smmu_v3::Mair1_bits;
   _cd.amair0() = 0;
   _cd.amair1() = 0;
 
   // Ensure context descriptor is observable by the SMMU.
-  Iommu::make_observable_before_cmd(&_cd);
+  Iommu_smmu_v3::make_observable_before_cmd(&_cd);
 
   return &_cd;
 }
 
 PRIVATE
-Iommu::Cd const *
+Iommu_smmu_v3::Cd const *
 Iommu_domain::get_cd_addr() const &
 { return &_cd; }
 
 PRIVATE
-Iommu::Cd const *
+Iommu_smmu_v3::Cd const *
 Iommu_domain::get_cd_addr() const && = delete;
 
 PRIVATE
 void
-Iommu::tlb_invalidate_asid(Asid asid)
+Iommu_smmu_v3::tlb_invalidate_asid(Asid asid)
 {
   // When domain is not bound it has the invalid ASID.
   if (asid != Invalid_asid)
@@ -2242,8 +2285,9 @@ Iommu::tlb_invalidate_asid(Asid asid)
 
 PRIVATE
 bool
-Iommu::prepare_ste(Ste_ptr ste_ptr, Iommu_domain &domain, Address pt_phys_addr,
-                   unsigned virt_addr_size, unsigned)
+Iommu_smmu_v3::prepare_ste(Ste_ptr ste_ptr, Iommu_domain &domain,
+                           Address pt_phys_addr, unsigned virt_addr_size,
+                           unsigned)
 {
   // Get or allocate context descriptor.
   Cd const *cd = domain.get_or_init_cd(_ias, virt_addr_size, pt_phys_addr);
@@ -2278,8 +2322,8 @@ Iommu::prepare_ste(Ste_ptr ste_ptr, Iommu_domain &domain, Address pt_phys_addr,
 
 PRIVATE inline
 bool
-Iommu::is_domain_bound_to_ste(Ste_ptr ste, Iommu_domain const &domain,
-                              Address) const
+Iommu_smmu_v3::is_domain_bound_to_ste(Ste_ptr ste, Iommu_domain const &domain,
+                                      Address) const
 {
   // If we do not own the STE, we cannot safely dereference the s1_context_ptr
   // field, so instead check if points to the domain's CD.
@@ -2288,16 +2332,16 @@ Iommu::is_domain_bound_to_ste(Ste_ptr ste, Iommu_domain const &domain,
 }
 
 // -----------------------------------------------------------
-IMPLEMENTATION [iommu && iommu_arm_smmu_v3 && arm_iommu_stage2]:
+IMPLEMENTATION [iommu_arm_smmu_v3 && arm_iommu_stage2]:
 
 PUBLIC inline
 unsigned
-Iommu::ipa_size() const
+Iommu_smmu_v3::ipa_size() const
 { return _ias; }
 
 PRIVATE
 void
-Iommu::tlb_invalidate_asid(Asid asid)
+Iommu_smmu_v3::tlb_invalidate_asid(Asid asid)
 {
   // When domain is not bound, it has the invalid ASID.
   if (asid != Invalid_asid)
@@ -2306,8 +2350,9 @@ Iommu::tlb_invalidate_asid(Asid asid)
 
 PRIVATE
 bool
-Iommu::prepare_ste(Ste_ptr ste_ptr, Iommu_domain &domain, Address pt_phys_addr,
-                   unsigned virt_addr_size, unsigned start_level)
+Iommu_smmu_v3::prepare_ste(Ste_ptr ste_ptr, Iommu_domain &domain,
+                           Address pt_phys_addr, unsigned virt_addr_size,
+                           unsigned start_level)
 {
   unsigned long vmid = domain.get_or_alloc_asid();
   if (vmid == Invalid_asid)
@@ -2345,15 +2390,15 @@ Iommu::prepare_ste(Ste_ptr ste_ptr, Iommu_domain &domain, Address pt_phys_addr,
 
 PRIVATE inline
 bool
-Iommu::is_domain_bound_to_ste(Ste_ptr ste, Iommu_domain const &,
-                              Address pt_phys_addr) const
+Iommu_smmu_v3::is_domain_bound_to_ste(Ste_ptr ste, Iommu_domain const &,
+                                      Address pt_phys_addr) const
 {
   // Stream table entry refers to the domain's page table.
   return ste->s2_ttb() == pt_phys_addr;
 }
 
 // ------------------------------------------------------------------
-IMPLEMENTATION [iommu && iommu_arm_smmu_v3]:
+IMPLEMENTATION [iommu_arm_smmu_v3]:
 
 #include "irq_mgr.h"
 
@@ -2393,7 +2438,7 @@ void setup_irq(unsigned pin, T *obj, F func)
 
 PRIVATE
 void
-Iommu::handle_cmdq_error()
+Iommu_smmu_v3::handle_cmdq_error()
 {
   Cmdq_cons cmdq_cons = read_reg<Cmdq_cons>();
   WARNX(Error, "IOMMU: Global error CMDQ_ERR occurred: Err=%u Index=%u\n",
@@ -2434,7 +2479,7 @@ Iommu::handle_cmdq_error()
 
 PRIVATE
 void
-Iommu::handle_gerror_irq()
+Iommu_smmu_v3::handle_gerror_irq()
 {
   Gerror gerror = read_reg<Gerror>();
   Gerrorn gerrorn = read_reg<Gerrorn>();
@@ -2469,45 +2514,31 @@ Iommu::handle_gerror_irq()
 
 PRIVATE
 void
-Iommu::setup_gerror_handler(unsigned gerror_irq)
+Iommu_smmu_v3::setup_gerror_handler(unsigned gerror_irq)
 {
   if (gerror_irq)
-    setup_irq(gerror_irq, this, &Iommu::handle_gerror_irq);
+    setup_irq(gerror_irq, this, &Iommu_smmu_v3::handle_gerror_irq);
 }
 
 // ------------------------------------------------------------------
-IMPLEMENTATION [iommu && iommu_arm_smmu_v3 && !debug]:
+IMPLEMENTATION [iommu_arm_smmu_v3 && !debug]:
 
-EXTENSION class Iommu
+EXTENSION class Iommu_smmu_v3
 {
-public:
-  enum
-  {
-    Debug      = 0,
-    Log_faults = 0,
-  };
-
 private:
   void setup_event_queue(unsigned, unsigned) {}
 };
 
 // ------------------------------------------------------------------
-IMPLEMENTATION [iommu && iommu_arm_smmu_v3 && debug]:
+IMPLEMENTATION [iommu_arm_smmu_v3 && debug]:
 
 #include "config.h"
 #include "irq_mgr.h"
 #include "warn.h"
 #include <cstdio>
 
-EXTENSION class Iommu
+EXTENSION class Iommu_smmu_v3
 {
-public:
-  enum
-  {
-    Debug      = 1,
-    Log_faults = Warn::is_enabled(Warn_level::Info),
-  };
-
 private:
   struct Event
   {
@@ -2577,7 +2608,7 @@ private:
 
 PRIVATE
 void
-Iommu::handle_eventq_irq()
+Iommu_smmu_v3::handle_eventq_irq()
 {
   auto on_overflow = []()
   {
@@ -2599,7 +2630,8 @@ Iommu::handle_eventq_irq()
 
 PRIVATE
 void
-Iommu::setup_event_queue(unsigned supported_eventq_bits, unsigned eventq_irq)
+Iommu_smmu_v3::setup_event_queue(unsigned supported_eventq_bits,
+                                 unsigned eventq_irq)
 {
   if (Iommu::Log_faults && eventq_irq)
     {
@@ -2607,6 +2639,119 @@ Iommu::setup_event_queue(unsigned supported_eventq_bits, unsigned eventq_irq)
                                            Event_queue_max_bits);
       _event_queue.init(this, eventq_bits);
 
-      setup_irq(eventq_irq, this, &Iommu::handle_eventq_irq);
+      setup_irq(eventq_irq, this, &Iommu_smmu_v3::handle_eventq_irq);
     }
 }
+
+// ------------------------------------------------------------------
+IMPLEMENTATION [iommu_arm_smmu_v3 && dt]:
+
+#include "boot_alloc.h"
+#include "dt.h"
+#include "kmem_mmio.h"
+#include <cstdio>
+
+IMPLEMENT_OVERRIDE static
+unsigned
+Iommu_smmu_v3::init_platform_dt()
+{
+  unsigned i = 0;
+  Dt::nodes_by_compatible("arm,smmu-v3", [&i](Dt::Node n)
+    {
+      if (!n.is_enabled())
+        return;
+
+      unsigned eventq_irq = Dt::get_arm_gic_irq(n, "eventq");
+      unsigned gerror_irq = Dt::get_arm_gic_irq(n, "gerror");
+
+      if (eventq_irq == ~0u) // Event logging is optional
+        eventq_irq = 0;
+      if (gerror_irq == ~0u) // We want error reporting
+        return;
+
+      uint64_t base, size;
+      if (n.get_reg(0, &base, &size))
+        {
+          auto *smmu = new Boot_object<Iommu_smmu_v3>();
+          smmu->setup(Kmem_mmio::map(base, size), eventq_irq, gerror_irq);
+          ++i;
+        }
+    });
+
+  printf("Number of arm,smmu-v3: %d\n", i);
+
+  return i;
+}
+
+// ------------------------------------------------------------------
+IMPLEMENTATION [iommu_arm_smmu_v3 && arm_acpi]:
+
+#include "acpi.h"
+#include "boot_alloc.h"
+#include "kmem.h"
+#include "kmem_mmio.h"
+#include "panic.h"
+
+IMPLEMENT_OVERRIDE
+unsigned
+Iommu_smmu_v3::init_platform_acpi()
+{
+  auto *iort = Acpi::find<Acpi_iort const *>("IORT");
+  if (!iort)
+    {
+      WARNX(Error, "SBSA: no IORT found!\n");
+      return 0;
+    }
+
+  unsigned i = 0;
+  for (auto const &node : *iort)
+    {
+      if (node->type == Acpi_iort::Node::Smmu_v2)
+        panic("SBSA: SMMUv2 not supported!");
+
+      if (node->type != Acpi_iort::Node::Smmu_v3)
+        continue;
+
+      auto const *smmu = static_cast<Acpi_iort::Smmu_v3 const *>(node);
+      void *v = Kmem_mmio::map(smmu->base_addr, 0x100000);
+      (new Boot_object<Iommu_smmu_v3>())->setup(v, smmu->gsiv_event,
+                                                smmu->gsiv_gerr);
+      ++i;
+    }
+
+  return i;
+}
+
+// ------------------------------------------------------------------
+IMPLEMENTATION [iommu_arm_smmu_v3 && (dt || arm_acpi)]:
+
+#include "dt.h"
+
+IMPLEMENT static
+void
+Iommu_smmu_v3::init_platform()
+{
+  if (Dt::have_fdt())
+    init_platform_dt();
+  else
+    init_platform_acpi();
+}
+
+// ------------------------------------------------------------------
+IMPLEMENTATION [iommu_arm_smmu_v3]:
+
+#include "static_init.h"
+#include <cstdio>
+
+PUBLIC static
+void
+Iommu_smmu_v3::init()
+{
+  printf("IOMMU: Initialize SMMUv3\n");
+
+  init_platform();
+
+  init_asid_alloc();
+}
+
+STATIC_INITIALIZE_P(Iommu_smmu_v3, IOMMU_INIT_PRIO);

@@ -1,10 +1,11 @@
 IMPLEMENTATION [arm && iommu && pf_layerscape]:
 
+#include "boot_alloc.h"
 #include "kmem_mmio.h"
 
 IMPLEMENT
 void
-Iommu::init_platform()
+Iommu_smmu_v2::init_platform()
 {
   static_assert(Max_iommus >= 4, "Unexpected number of IOMMUs.");
   /*
@@ -18,12 +19,11 @@ Iommu::init_platform()
   Address const base_addrs[] = { 0x01200000, 0x01280000, 0x01300000, 0x01380000 };
   unsigned const nonsec_irqs[] = { 101, 103, 105, 206 };
 
-  _iommus = Iommu_array(new Boot_object<Iommu>[4], 4);
-
   for (unsigned i = 0; i < 4; ++i)
     {
+      auto *smmu = new Boot_object<Iommu_smmu_v2>();
       void *v = Kmem_mmio::map(base_addrs[i], 0x10000);
-      _iommus[i].setup(Version::Smmu_v1, v);
-      _iommus[i].setup_irqs(&nonsec_irqs[i], 1, 1);
+      smmu->setup(Iommu_smmu_v2::Version::Smmu_v1, v);
+      smmu->setup_irqs(&nonsec_irqs[i], 1, 1);
     }
 }

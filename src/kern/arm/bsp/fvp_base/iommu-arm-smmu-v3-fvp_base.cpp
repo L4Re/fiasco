@@ -1,10 +1,11 @@
 IMPLEMENTATION [arm && iommu && pf_fvp_base]:
 
+#include "boot_alloc.h"
 #include "kmem_mmio.h"
 
 IMPLEMENT
 void
-Iommu::init_platform()
+Iommu_smmu_v3::init_platform()
 {
   static_assert(Max_iommus >= 1, "Unexpected number of IOMMUs.");
   Address base_addr = 0x002b400000;
@@ -19,8 +20,7 @@ Iommu::init_platform()
   // 110  78  SMMUv3 secure GERROR. Unused because there is no secure side.
   // 111  79  SMMUv3 non-secure GERROR.
 
-  _iommus = Iommu_array(new Boot_object<Iommu>[1], 1);
-
+  auto *smmu = new Boot_object<Iommu_smmu_v3>();
   void *v = Kmem_mmio::map(base_addr, 0x100000);
-  _iommus[0].setup(v, 106, 111);
+  smmu->setup(v, 106, 111);
 }

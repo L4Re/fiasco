@@ -1,10 +1,11 @@
 IMPLEMENTATION [arm && iommu && pf_lx2160]:
 
+#include "boot_alloc.h"
 #include "kmem_mmio.h"
 
 IMPLEMENT
 void
-Iommu::init_platform()
+Iommu_smmu_v2::init_platform()
 {
   static_assert(Max_iommus >= 1, "Unexpected number of IOMMUs.");
   static constinit unsigned const nonsec_irqs[] =
@@ -22,9 +23,8 @@ Iommu::init_platform()
     234, 235, 236, 237, 238, 239, 240, 241,
   };
 
-  _iommus = Iommu_array(new Boot_object<Iommu>[1], 1);
-
+  auto *smmu = new Boot_object<Iommu_smmu_v2>();
   void *v = Kmem_mmio::map(0x5000000, 0x800000);
-  _iommus[0].setup(Version::Smmu_v2, v);
-  _iommus[0].setup_irqs(nonsec_irqs, cxx::size(nonsec_irqs), 1);
+  smmu->setup(Iommu_smmu_v2::Version::Smmu_v2, v);
+  smmu->setup_irqs(nonsec_irqs, cxx::size(nonsec_irqs), 1);
 }

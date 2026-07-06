@@ -1,5 +1,5 @@
 // -----------------------------------------------------------
-INTERFACE [iommu && 64bit]:
+INTERFACE [iommu_arm_smmu_v3 && 64bit]:
 
 EXTENSION class Dmar_space
 {
@@ -19,13 +19,13 @@ EXTENSION class Dmar_space
 };
 
 // -----------------------------------------------------------
-INTERFACE [iommu && !arm_iommu_stage2 && 64bit]:
+INTERFACE [iommu_arm_smmu_v3 && !arm_iommu_stage2 && 64bit]:
 
 EXTENSION class Dmar_space
 {
   struct Stage1_page_attr
   {
-    // See Iommu::Mair0_bits for the definition.
+    // See Iommu_smmu_v3::Mair0_bits for the definition.
     enum Attribs_enum
     {
       Cache_mask    = 0x01c, ///< MAIR index 0..7
@@ -64,7 +64,7 @@ EXTENSION class Dmar_space
 };
 
 // -----------------------------------------------------------
-INTERFACE [iommu && arm_iommu_stage2 && cpu_virt && 64bit]:
+INTERFACE [iommu_arm_smmu_v3 && arm_iommu_stage2 && cpu_virt && 64bit]:
 
 EXTENSION class Dmar_space
 {
@@ -99,7 +99,7 @@ EXTENSION class Dmar_space
 };
 
 // -----------------------------------------------------------
-INTERFACE [iommu]:
+INTERFACE [iommu_arm_smmu_v3]:
 
 EXTENSION class Dmar_space
 {
@@ -113,11 +113,11 @@ EXTENSION class Dmar_space
 };
 
 // -----------------------------------------------------------
-IMPLEMENTATION [iommu && !arm_iommu_stage2]:
+IMPLEMENTATION [iommu_arm_smmu_v3 && !arm_iommu_stage2]:
 
 PRIVATE inline
 Dmar_space::Ptab_cfg
-Dmar_space::get_ptab_cfg(Iommu *)
+Dmar_space::get_ptab_cfg(Iommu_smmu_v3 *)
 {
   unsigned char virt_addr_size = Dmar_pdir::page_order_for_level(0)
                                  + Dmar_pdir::Levels::size(0);
@@ -126,7 +126,7 @@ Dmar_space::get_ptab_cfg(Iommu *)
 }
 
 // -----------------------------------------------------------
-IMPLEMENTATION [iommu && arm_iommu_stage2]:
+IMPLEMENTATION [iommu_arm_smmu_v3 && arm_iommu_stage2]:
 
 IMPLEMENT_OVERRIDE inline
 bool
@@ -142,7 +142,7 @@ Dmar_space::prealloc_pt()
 
 PRIVATE inline
 Dmar_space::Ptab_cfg
-Dmar_space::get_ptab_cfg(Iommu *iommu)
+Dmar_space::get_ptab_cfg(Iommu_smmu_v3 *iommu)
 {
   constexpr unsigned max_ipa_size = Dmar_pdir::page_order_for_level(0)
                                     + Dmar_pdir::Levels::size(0);
@@ -175,7 +175,7 @@ Dmar_space::get_ptab_cfg(Iommu *iommu)
 }
 
 // -----------------------------------------------------------
-IMPLEMENTATION [iommu]:
+IMPLEMENTATION [iommu_arm_smmu_v3]:
 
 #include "kmem.h"
 
@@ -192,34 +192,40 @@ IMPLEMENT
 void
 Dmar_space::tlb_flush_current_cpu()
 {
-  Iommu::tlb_invalidate_domain(_domain);
+  Iommu_smmu_v3::tlb_invalidate_domain(_domain);
 }
 
 IMPLEMENT
 int
 Dmar_space::bind_mmu(Iommu *mmu, Unsigned32 stream_id, Unsigned64 *max_addr)
 {
-  auto [pt_phys_addr, virt_addr_size, start_level] = get_ptab_cfg(mmu);
+  // All registered IOMMUs are SMMUv3 in this configuration.
+  auto *smmu = static_cast<Iommu_smmu_v3 *>(mmu);
+  auto [pt_phys_addr, virt_addr_size, start_level] = get_ptab_cfg(smmu);
   *max_addr = (Unsigned64{1} << virt_addr_size) - 1;
-  return mmu->bind(stream_id, _domain, pt_phys_addr, virt_addr_size,
-                   start_level);
+  return smmu->bind(stream_id, _domain, pt_phys_addr, virt_addr_size,
+                    start_level);
 }
 
 IMPLEMENT
 int
 Dmar_space::unbind_mmu(Iommu *mmu, Unsigned32 stream_id)
 {
-  auto pt_phys_addr = get_ptab_cfg(mmu).pt_phys_addr;
-  return mmu->unbind(stream_id, _domain, pt_phys_addr);
+  // All registered IOMMUs are SMMUv3 in this configuration.
+  auto *smmu = static_cast<Iommu_smmu_v3 *>(mmu);
+  auto pt_phys_addr = get_ptab_cfg(smmu).pt_phys_addr;
+  return smmu->unbind(stream_id, _domain, pt_phys_addr);
 }
 
 PRIVATE
 void
 Dmar_space::remove_from_all_iommus()
 {
-  for (auto &iommu : Iommu::iommus())
+  for (Iommu *iommu : Iommu::iommus())
     {
-      auto pt_phys_addr = get_ptab_cfg(&iommu).pt_phys_addr;
-      iommu.remove(_domain, pt_phys_addr);
+      // All registered IOMMUs are SMMUv3 in this configuration.
+      auto *smmu = static_cast<Iommu_smmu_v3 *>(iommu);
+      auto pt_phys_addr = get_ptab_cfg(smmu).pt_phys_addr;
+      smmu->remove(_domain, pt_phys_addr);
     }
 }

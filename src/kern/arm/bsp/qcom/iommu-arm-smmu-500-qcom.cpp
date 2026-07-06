@@ -121,18 +121,17 @@ static unsigned const gpu_smmu_irqs[] = {
 // ------------------------------------------------------------------------
 IMPLEMENTATION [arm && iommu && pf_qcom]:
 
+#include "boot_alloc.h"
 #include "io.h"
 #include "kmem_mmio.h"
 #include "warn.h"
 
 IMPLEMENT
 void
-Iommu::init_platform()
+Iommu_smmu_v2::init_platform()
 {
   static_assert(Max_iommus == 1 || Max_iommus == 2,
                 "Unexpected number of IOMMUs.");
-
-  _iommus = Iommu_array(new Boot_object<Iommu>[Max_iommus], Max_iommus);
 
   /*
    * The APPS SMMU on MSM8916 has a special "interrupt aggregation logic"
@@ -145,13 +144,14 @@ Iommu::init_platform()
    * later in case the SMMU version is used for more than just the interrupt
    * configuration.
    */
-  Version version = Version::Smmu_v2;
+  Version version = Iommu_smmu_v2::Version::Smmu_v2;
   if (cxx::size(apps_smmu_irqs) == 2) // Global + single context interrupt?
-    version = Version::Smmu_v1;
+    version = Iommu_smmu_v2::Version::Smmu_v1;
 
+  auto *apps = new Boot_object<Iommu_smmu_v2>();
   void *base = Kmem_mmio::map(apps_smmu.base, apps_smmu.size);
-  _iommus[0].setup(version, base, apps_smmu.mask);
-  _iommus[0].setup_irqs(apps_smmu_irqs, cxx::size(apps_smmu_irqs), 1);
+  apps->setup(version, base, apps_smmu.mask);
+  apps->setup_irqs(apps_smmu_irqs, cxx::size(apps_smmu_irqs), 1);
 
   /*
    * There are 2 IOMMUs on all supported platforms but the GPU SMMU is not
@@ -160,8 +160,9 @@ Iommu::init_platform()
    */
   if (Max_iommus > 1)
     {
+      auto *gpu = new Boot_object<Iommu_smmu_v2>();
       base = Kmem_mmio::map(gpu_smmu.base, gpu_smmu.size);
-      _iommus[1].setup(Version::Smmu_v2, base, gpu_smmu.mask);
-      _iommus[1].setup_irqs(gpu_smmu_irqs, cxx::size(gpu_smmu_irqs), 1);
+      gpu->setup(Iommu_smmu_v2::Version::Smmu_v2, base, gpu_smmu.mask);
+      gpu->setup_irqs(gpu_smmu_irqs, cxx::size(gpu_smmu_irqs), 1);
     }
 }
