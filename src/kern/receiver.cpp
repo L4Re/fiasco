@@ -76,7 +76,7 @@ public:
   virtual ~Receiver() = 0;
 
   /// Constant used to address the implicit per-thread reply cap slot.
-  static constexpr auto Implicit_reply_cap_index = Reply_cap_index(~0U);
+  static constexpr auto Implicit_reply_cap_index = Reply_cap_index(-1);
 
 protected:
   /**
