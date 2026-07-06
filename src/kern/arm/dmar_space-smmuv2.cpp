@@ -1,31 +1,14 @@
-// -----------------------------------------------------------
-INTERFACE [iommu && (iommu_arm_smmu_400 || 32bit)]:
-
-EXTENSION class Dmar_space
-{
-  // LPAE page table format
-  typedef Ptab::Tupel< Ptab::Traits< Unsigned64, 30, 2, true>,
-                       Ptab::Traits< Unsigned64, 21, 9, true>,
-                       Ptab::Traits< Unsigned64, 12, 9, true> >::List Ptab_traits;
-};
-
-// -----------------------------------------------------------
-INTERFACE [iommu && iommu_arm_smmu_500 && 64bit]:
-
-EXTENSION class Dmar_space
-{
-  // AArch64 page table format, with a concatenated root page table (10-bits),
-  // which means we skip level zero.
-  typedef Ptab::Tupel< Ptab::Traits< Unsigned64, 30, 10, true>,
-                       Ptab::Traits< Unsigned64, 21, 9, true>,
-                       Ptab::Traits< Unsigned64, 12, 9, true> >::List Ptab_traits;
-};
-
-// -----------------------------------------------------------
 INTERFACE [iommu]:
 
 EXTENSION class Dmar_space
 {
+  // Va64_support==false: LPAE page table format
+  // Va64_support==true:  AArch64 page table format, with a concatenated root
+  //                      page table (10-bits), which means we skip level zero.
+  typedef Ptab::Tupel< Ptab::Traits< Unsigned64, 30,
+                                     Iommu::Va64_support ? 10 : 2, true>,
+                       Ptab::Traits< Unsigned64, 21, 9, true>,
+                       Ptab::Traits< Unsigned64, 12, 9, true> >::List Ptab_traits;
   class Dmar_pte_ptr :
     public Pte_long_desc<Dmar_pte_ptr>,
     public Pte_iommu<Dmar_pte_ptr>,

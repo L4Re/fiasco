@@ -1,33 +1,3 @@
-INTERFACE [iommu && (32bit || iommu_arm_smmu_400)]:
-
-EXTENSION class Iommu
-{
-  enum
-  {
-    // LPAE page table format
-    Va64_support   = 0,
-    // 32-bit virtual address space
-    Virt_addr_size = 32,
-    // 40-bit physical address space
-    Phys_addr_size = 40,
-  };
-};
-
-INTERFACE [iommu && 64bit && iommu_arm_smmu_500]:
-
-EXTENSION class Iommu
-{
-  enum
-  {
-    // AArch64 page table format
-    Va64_support   = 1,
-    // 40-bit virtual address space
-    Virt_addr_size = 40,
-    // 40-bit physical address space
-    Phys_addr_size = 40,
-  };
-};
-
 INTERFACE [iommu]:
 
 #include "types.h"
@@ -58,6 +28,17 @@ INTERFACE [iommu]:
 EXTENSION class Iommu
 {
 public:
+  enum
+  {
+    // Use the AArch64 page table format with a 40-bit virtual address space if
+    // all SMMUs are MMU-500 class and the kernel is 64-bit, otherwise use the
+    // LPAE page table format with a 32-bit virtual address space. SMMU-400 does
+    // not implement the AArch64 format.
+    Va64_support = TAG_ENABLED(iommu_arm_smmu_v2_va64),
+    Virt_addr_size = Va64_support ? 40 : 32,
+    Phys_addr_size = 40,
+  };
+
   enum class Version
   {
     Smmu_v1,

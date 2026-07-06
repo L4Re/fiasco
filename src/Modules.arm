@@ -97,8 +97,7 @@ cpu_IMPL	  	:= cpu cpu-arm cpu-arm-$(BITS)
 cpu_lock_IMPL  	  	:= cpu_lock cpu_lock-generic
 cpubits_IMPL            := cpubits-arm-$(BITS)
 dmar_space_IMPL		:= dmar_space \
-                           $(if $(CONFIG_IOMMU_ARM_SMMU_400),dmar_space-smmuv2) \
-                           $(if $(CONFIG_IOMMU_ARM_SMMU_500),dmar_space-smmuv2) \
+                           $(if $(CONFIG_IOMMU_ARM_SMMU_V2),dmar_space-smmuv2) \
                            $(if $(CONFIG_IOMMU_ARM_SMMU_V3),dmar_space-smmuv3)
 dt_IMPL                 := dt dt-arm
 entry_frame_IMPL	:= entry_frame entry_frame-arm
@@ -112,8 +111,7 @@ gic_dist_IMPL		:= gic_dist
 globals_IMPL		:= globals globals-arm
 hyp_vm_state_IMPL	:= hyp_vm_state hyp_vm_state-$(BITS)
 iommu_IMPL		:= iommu-arm \
-                           $(if $(CONFIG_IOMMU_ARM_SMMU_400),iommu-arm-smmuv2) \
-                           $(if $(CONFIG_IOMMU_ARM_SMMU_500),iommu-arm-smmuv2) \
+                           $(if $(CONFIG_IOMMU_ARM_SMMU_V2),iommu-arm-smmuv2) \
                            $(if $(CONFIG_IOMMU_ARM_SMMU_V3),iommu-arm-smmuv3)
 ipi_IMPL		:= ipi ipi-arm
 kdb_ke_IMPL		+= kdb_ke-arm
