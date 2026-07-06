@@ -29,14 +29,25 @@ config PF_ARM_GEN_SELECT_ACPI
 	default y
 	select ARM_ACPI
 
+config PF_ARM_GEN_SELECT_SMMU_400
+	bool "Support SMMU-400" if PF_ARM_GEN_SELECT_SUPPORT
+	default y
+	select HAS_IOMMU_ARM_SMMU_400
+
+config PF_ARM_GEN_SELECT_SMMU_500
+	bool "Support SMMU-500" if PF_ARM_GEN_SELECT_SUPPORT
+	default y
+	select HAS_IOMMU_ARM_SMMU_500
+
 config PF_ARM_GEN_SELECT_SMMU_V3
 	bool "Support SMMUv3" if PF_ARM_GEN_SELECT_SUPPORT
 	default y
 	select HAS_IOMMU_ARM_SMMU_V3
 
 config ARM_IOMMU_MAX
-	int "Maximum number of supported IOMMUs" \
-	  if PF_ARM_GEN_SELECT_SUPPORT && HAS_IOMMU_ARM_SMMU_V3
+	int "Maximum number of IOMMUs to support" \
+	  if PF_ARM_GEN_SELECT_SUPPORT && \
+	    (HAS_IOMMU_ARM_SMMU_400 || HAS_IOMMU_ARM_SMMU_500 || HAS_IOMMU_ARM_SMMU_V3)
 	depends on IOMMU
 	default 32
 	help
