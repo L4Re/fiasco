@@ -157,6 +157,21 @@ void
 Gic_dist::sync_rwp(V2)
 {}
 
+PUBLIC inline
+unsigned
+Gic_dist::hw_pin_space(V2)
+{ return hw_nr_pins(); }
+
+PRIVATE
+unsigned
+Gic_dist::init_espi(V2)
+{ return 0; }
+
+PRIVATE
+void
+Gic_dist::init_espi_targets(unsigned, V2)
+{}
+
 //-------------------------------------------------------------------
 IMPLEMENTATION [have_arm_gicv3]:
 
@@ -186,6 +201,59 @@ Gic_dist::hw_nr_lpis()
   return 1U << (num_lpis + 1);
 }
 
+PUBLIC inline
+unsigned
+Gic_dist::hw_nr_espis()
+{
+  if constexpr (!TAG_ENABLED(gicv3_espi))
+    return 0;
+
+  Typer_v3 t = typer<Typer_v3>();
+  if (!t.espi())
+    return 0;
+
+  return (t.espi_range() + 1) * 32;
+}
+
+PUBLIC inline
+unsigned
+Gic_dist::hw_pin_space(V3)
+{
+  unsigned num_espis = hw_nr_espis();
+  return num_espis ? Espi_intid_base + num_espis : hw_nr_pins();
+}
+
+PRIVATE
+unsigned
+Gic_dist::init_espi(V3)
+{
+  unsigned num = hw_nr_espis();
+
+  for (unsigned i = 0; i < num; i += 16)
+    _dist.write<Unsigned32>(0, GICD_ICFGRnE + i * 4 / 16);
+
+  for (unsigned i = 0; i < num; i += 4)
+    _dist.write<Unsigned32>(0xa0a0a0a0U, GICD_IPRIORITYRnE + i);
+
+  for (unsigned i = 0; i < num; i += 32)
+    {
+      _dist.write<Unsigned32>(0xffffffffU, GICD_ICENABLERnE + i / 8);
+      _dist.write<Unsigned32>(~0u, GICD_IGROUPRnE + i / 8);
+    }
+
+  return num;
+}
+
+PRIVATE
+void
+Gic_dist::init_espi_targets(unsigned num, V3)
+{
+  Unsigned64 t = Cpu::mpidr() & 0xff00ffffffULL;
+
+  for (unsigned i = 0; i < num; ++i)
+    _dist.write_non_atomic<Unsigned64>(t, GICD_IROUTERnE + 8 * i);
+}
+
 PUBLIC static inline
 Unsigned64
 Gic_dist::cpu_to_irouter_entry(Cpu_number cpu)
@@ -198,6 +266,14 @@ PUBLIC inline
 void
 Gic_dist::set_cpu(Mword pin, Unsigned64 irouter_entry, V3)
 {
+  if (is_espi(pin))
+    {
+      _dist.write_non_atomic<Unsigned64>(irouter_entry,
+                                         GICD_IROUTERnE
+                                         + 8 * (pin - Espi_intid_base));
+      return;
+    }
+
   if (pin < 32) // GICD_IROUTER<0..31> are reserved
     return;
   _dist.write_non_atomic<Unsigned64>(irouter_entry, GICD_IROUTER + 8 * pin);
@@ -254,6 +330,10 @@ PUBLIC inline
 Unsigned32
 Gic_dist::irouter(unsigned num)
 {
+  if (is_espi(num))
+    return _dist.read_non_atomic<Unsigned64>(GICD_IROUTERnE
+                                             + (num - Espi_intid_base) * 8);
+
   return _dist.read_non_atomic<Unsigned64>(GICD_IROUTER + num * 8);
 }
 
@@ -281,6 +361,11 @@ Gic_dist::hw_nr_pins()
 {
   return (typer<Typer>().num_spis() + 1) * 32;
 }
+
+PUBLIC static inline
+bool
+Gic_dist::is_espi(Mword pin)
+{ return TAG_ENABLED(gicv3_espi) && pin >= Espi_intid_base; }
 
 PUBLIC inline
 bool
@@ -345,10 +430,17 @@ Gic_dist::set_mode(Mword pin, Irq_chip::Mode m)
       return -L4_err::EInval;
     };
 
+  unsigned base = GICD_ICFGR;
+  if (is_espi(pin))
+    {
+      base = GICD_ICFGRnE;
+      pin -= Espi_intid_base;
+    }
+
   unsigned shift = (pin & 15) * 2;
 
   auto guard = lock_guard(_lock);
-  _dist.modify<Unsigned32>(v << shift, 3 << shift, GICD_ICFGR + (pin >> 4) * 4);
+  _dist.modify<Unsigned32>(v << shift, 3 << shift, base + (pin >> 4) * 4);
 
   return 0;
 }
@@ -360,7 +452,14 @@ Gic_dist::is_edge_triggered(Mword pin) const
   if (pin < 16)
     return false;
 
-  Unsigned32 v = _dist.read<Unsigned32>(GICD_ICFGR + (pin >> 4) * 4);
+  unsigned base = GICD_ICFGR;
+  if (is_espi(pin))
+    {
+      base = GICD_ICFGRnE;
+      pin -= Espi_intid_base;
+    }
+
+  Unsigned32 v = _dist.read<Unsigned32>(base + (pin >> 4) * 4);
   return (v >> ((pin & 15) * 2)) & 2;
 }
 
@@ -395,14 +494,30 @@ template<typename VERSION>
 void
 Gic_dist::disable_irq(VERSION, unsigned irq)
 {
-  _dist.write<Unsigned32>(1 << (irq % 32), GICD_ICENABLER + (irq / 32) * 4);
+  unsigned base = GICD_ICENABLER;
+  if (is_espi(irq))
+    {
+      base = GICD_ICENABLERnE;
+      irq -= Espi_intid_base;
+    }
+
+  _dist.write<Unsigned32>(1 << (irq % 32), base + (irq / 32) * 4);
   sync_rwp(VERSION());
 }
 
 PUBLIC inline
 void
 Gic_dist::enable_irq(unsigned irq)
-{ _dist.write<Unsigned32>(1 << (irq % 32), GICD_ISENABLER + (irq / 32) * 4); }
+{
+  unsigned base = GICD_ISENABLER;
+  if (is_espi(irq))
+    {
+      base = GICD_ISENABLERnE;
+      irq -= Espi_intid_base;
+    }
+
+  _dist.write<Unsigned32>(1 << (irq % 32), base + (irq / 32) * 4);
+}
 
 PUBLIC
 template<typename VERSION>
@@ -425,11 +540,14 @@ Gic_dist::init(VERSION, unsigned cpu_prio, int nr_pins_override = -1)
   init_regs(32, num);
   igroup_init(VERSION(), num);
 
+  unsigned num_espi = init_espi(VERSION());
+
   enable(VERSION());
 
   // Initialize interrupt targets last, since for the GICv3 affinity routing
   // must be enabled before interrupt affinities (targets) can be assigned.
   init_targets(num, VERSION());
+  init_espi_targets(num_espi, VERSION());
 
   if constexpr (Config_mxc_tzic)
     {
@@ -437,20 +555,34 @@ Gic_dist::init(VERSION, unsigned cpu_prio, int nr_pins_override = -1)
       _dist.write<Unsigned32>(cpu_prio, MXC_TZIC_PRIOMASK);
     }
 
-  return num;
+  return num_espi ? Espi_intid_base + num_espi : num;
 }
 
 PUBLIC inline
 void
 Gic_dist::irq_prio(unsigned irq, unsigned prio)
 {
-  _dist.write<Unsigned8>(prio, GICD_IPRIORITYR + irq);
+  unsigned base = GICD_IPRIORITYR;
+  if (is_espi(irq))
+    {
+      base = GICD_IPRIORITYRnE;
+      irq -= Espi_intid_base;
+    }
+
+  _dist.write<Unsigned8>(prio, base + irq);
 }
 
 PUBLIC inline
 unsigned
 Gic_dist::irq_prio(unsigned irq)
 {
-  return _dist.read<Unsigned8>(GICD_IPRIORITYR + irq);
+  unsigned base = GICD_IPRIORITYR;
+  if (is_espi(irq))
+    {
+      base = GICD_IPRIORITYRnE;
+      irq -= Espi_intid_base;
+    }
+
+  return _dist.read<Unsigned8>(base + irq);
 }
 

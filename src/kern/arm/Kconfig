@@ -144,6 +144,9 @@ config HAVE_ARM_GICV3
 config HAVE_ARM_GIC_MSI
 	bool
 
+config HAVE_GIC_ESPI
+	bool
+
 config ARM_GIC_NOT_COHERENT
 	bool
 
@@ -389,6 +392,16 @@ config ARM_GIC_MSI
 	depends on HAVE_ARM_GIC_MSI
 	help
 	  Build Fiasco with support for message-based interrupts (MSIs).
+
+config GICV3_ESPI
+	bool "Enable extended SPI support (GICv3.1)"
+	default y
+	depends on HAVE_GIC_ESPI && HAVE_ARM_GICV3
+	help
+	  Build Fiasco with support for the extended SPI range (INTIDs
+	  4096-5119) introduced with GICv3.1. If the interrupt controller
+	  implements extended SPIs, they are made available as regular
+	  interrupts.
 
 config ARM_SVE
 	bool "Scalable Vector Extension support"

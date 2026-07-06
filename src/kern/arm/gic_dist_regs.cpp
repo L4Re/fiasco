@@ -29,6 +29,18 @@ public:
 
     GICD_IROUTER      = 0x6000, // n = 0..31 reserved, n = 32...1019 valid
 
+    // GICv3.1 extended SPI range (INTIDs 4096...5119)
+    GICD_IGROUPRnE    = 0x1000,
+    GICD_ISENABLERnE  = 0x1200,
+    GICD_ICENABLERnE  = 0x1400,
+    GICD_ISPENDRnE    = 0x1600,
+    GICD_ICPENDRnE    = 0x1800,
+    GICD_ISACTIVERnE  = 0x1a00,
+    GICD_ICACTIVERnE  = 0x1c00,
+    GICD_IPRIORITYRnE = 0x2000,
+    GICD_ICFGRnE      = 0x3000,
+    GICD_IROUTERnE    = 0x8000,
+
     // covers GICv2 and GICv3
     Size              = 0x10000,
 
@@ -45,6 +57,7 @@ public:
     MXC_TZIC_CTRL_NSEN       = 1U << 16,
     MXC_TZIC_CTRL_NSENMASK   = 1U << 31,
 
+    Espi_intid_base = 4096,
     Lpi_intid_base = 8192,
   };
 

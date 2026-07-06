@@ -51,6 +51,9 @@ public:
     unsigned num = init(dist_init, nr_pins_override);
     printf("GIC: Number of IRQs available at this GIC: %d\n", num);
     Irq_chip_gen::init(num);
+    reserve_espi_hole(nr_pins_override >= 0
+                      ? static_cast<unsigned>(nr_pins_override)
+                      : _dist.hw_nr_pins());
   }
 
   /**
@@ -61,6 +64,7 @@ public:
   : Gic(dist_base), _cpu(cxx::forward<CPU_ARGS>(args)...)
   {
     Irq_chip_gen::init(master_mapping->nr_pins());
+    reserve_espi_hole(_dist.hw_nr_pins());
   }
 
   unsigned init(bool dist_init, int nr_pins_override = -1)
@@ -72,11 +76,23 @@ public:
                        nr_pins_override);
     else
       num = nr_pins_override >= 0 ? static_cast<unsigned>(nr_pins_override)
-                                  : _dist.hw_nr_pins();
+                                  : _dist.hw_pin_space(typename IMPL::Version());
 
     self()->init_global_irq_handler();
 
     return num;
+  }
+
+  void reserve_espi_hole(unsigned nr_spis)
+  {
+    if constexpr (!TAG_ENABLED(gicv3_espi))
+      return;
+
+    if (Irq_chip_gen::nr_pins() <= Gic_dist::Espi_intid_base)
+      return;
+
+    for (unsigned i = nr_spis; i < Gic_dist::Espi_intid_base; ++i)
+      Irq_chip_gen::reserve(i);
   }
 
   void acknowledge_locked(unsigned irq)

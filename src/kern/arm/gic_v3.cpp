@@ -243,6 +243,14 @@ Gic_v3::migrate_irqs(Cpu_number from, Cpu_number to)
     if (_dist.irouter(i) == val_from)
       set_cpu(i, to);
 
+  unsigned num_espis = _dist.hw_nr_espis();
+  for (unsigned i = 0; i < num_espis; ++i)
+    {
+      unsigned pin = Gic_dist::Espi_intid_base + i;
+      if (_dist.irouter(pin) == val_from)
+        set_cpu(pin, to);
+    }
+
   migrate_lpis(from, to);
 }
 
