@@ -946,6 +946,11 @@ config EXPERIMENTAL
 	  Enabling these features might be less than fully secure and may
 	  disrupt the stability of your kernel.
 
+	  Features depending on this option may have rough edges and
+	   - could become production-ready in the future
+	   - could be removed in the future
+	   - could change without prior notice.
+
 	  Use with caution!
 
 config EXPERT
