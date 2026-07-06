@@ -479,7 +479,7 @@ Bootstrap::init_paging()
       "msr ttbr1_el1, %1 \n"
       "isb               \n"
       : :
-      "r"(ud), "r"(kd), "r"(Page::Ttbcr_bits));
+      "r"(ud), "r"(kd), "r"(Page::tcr_bits()));
 
   return Phys_addr(0);
 }
@@ -634,7 +634,7 @@ Bootstrap::init_paging()
       "msr ttbr0_el2, %0 \n"
       "isb               \n"
       : :
-      "r"(d), "r"(Mword{Page::Ttbcr_bits}));
+      "r"(d), "r"(Page::tcr_bits()));
 
   return Phys_addr(0);
 }

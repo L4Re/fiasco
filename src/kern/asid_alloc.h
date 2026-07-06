@@ -16,7 +16,7 @@
  * +------------------------+--------+
  * |   generation count     | ASID   |
  * +------------------------+--------+
- * X = Asid_bits - 1
+ * X = Max_asid_bits - 1
  * \endverbatim
  *
  * As the generation count increases, the value may wrap around and start again

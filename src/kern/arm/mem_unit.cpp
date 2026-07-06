@@ -49,10 +49,16 @@ public:
 //---------------------------------------------------------------------------
 INTERFACE [arm && arm_asid16]:
 
+#include "global_data.h"
+
 EXTENSION class Mem_unit
 {
 public:
-  enum { Asid_bits = 16 };
+  enum { Max_asid_bits = 16 };
+
+private:
+  /// ASID/VMID size used by the kernel, detected on the boot CPU.
+  static Global_data<unsigned> _asid_bits;
 };
 
 //---------------------------------------------------------------------------
@@ -61,8 +67,59 @@ INTERFACE [arm && !arm_asid16]:
 EXTENSION class Mem_unit
 {
 public:
-  enum { Asid_bits = 8 };
+  enum { Max_asid_bits = 8 };
 };
+
+//---------------------------------------------------------------------------
+IMPLEMENTATION [arm && arm_asid16]:
+
+#include "minmax.h"
+
+DEFINE_GLOBAL_CONSTINIT Global_data<unsigned> Mem_unit::_asid_bits(8);
+
+/**
+ * Number of ASID/VMID bits used by the kernel.
+ *
+ * The hardware might implement fewer bits than the kernel supports
+ * (Max_asid_bits). Until the boot CPU has set the size according to its
+ * hardware capabilities, the architectural minimum of 8 bits applies.
+ */
+PUBLIC static inline
+unsigned
+Mem_unit::asid_bits()
+{ return _asid_bits; }
+
+/**
+ * Set the ASID/VMID size according to the hardware capabilities.
+ *
+ * Must be called on the boot CPU before the first ASID is allocated.
+ */
+PUBLIC static inline NEEDS["minmax.h"]
+void
+Mem_unit::set_asid_bits(unsigned bits)
+{ _asid_bits = min<unsigned>(bits, Max_asid_bits); }
+
+//---------------------------------------------------------------------------
+IMPLEMENTATION [arm && !arm_asid16]:
+
+PUBLIC static inline
+unsigned
+Mem_unit::asid_bits()
+{ return Max_asid_bits; }
+
+PUBLIC static inline
+void
+Mem_unit::set_asid_bits(unsigned)
+{}
+
+//---------------------------------------------------------------------------
+IMPLEMENTATION [arm]:
+
+/// Number of usable ASIDs/VMIDs.
+PUBLIC static inline
+unsigned
+Mem_unit::asid_num()
+{ return 1U << asid_bits(); }
 
 //---------------------------------------------------------------------------
 IMPLEMENTATION [arm && !arm_v7plus]:

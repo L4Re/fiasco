@@ -167,14 +167,16 @@ Cpu::asid_bits() const
 
 IMPLEMENT_OVERRIDE
 void
-Cpu::init_supervisor_mode(bool)
+Cpu::init_supervisor_mode(bool is_boot_cpu)
 {
   extern char exception_vector[];
   asm volatile ("msr VBAR_EL1, %0" : : "r"(&exception_vector));
 
-  if (asid_bits() < Mem_unit::Asid_bits)
-    panic("ASID size too small: HW provides %d bits, configured %d bits!",
-          asid_bits(), Mem_unit::Asid_bits);
+  if (is_boot_cpu)
+    Mem_unit::set_asid_bits(asid_bits());
+  else if (asid_bits() < Mem_unit::asid_bits())
+    panic("ASID size too small: HW provides %d bits, kernel uses %d bits!",
+          asid_bits(), Mem_unit::asid_bits());
 }
 
 //--------------------------------------------------------------------------
@@ -242,9 +244,11 @@ Cpu::init_hyp_mode_common(bool is_boot_cpu)
 
   init_ras(is_boot_cpu);
 
-  if (vmid_bits() < Mem_unit::Asid_bits)
-    panic("VMID size too small: HW provides %d bits, configured %d bits!",
-          vmid_bits(), Mem_unit::Asid_bits);
+  if (is_boot_cpu)
+    Mem_unit::set_asid_bits(vmid_bits());
+  else if (vmid_bits() < Mem_unit::asid_bits())
+    panic("VMID size too small: HW provides %d bits, kernel uses %d bits!",
+          vmid_bits(), Mem_unit::asid_bits());
 
   asm volatile ("msr VBAR_EL2, %x0" : : "r"(&exception_vector));
   asm volatile ("msr VTCR_EL2, %x0" : : "r"(vtcr_bits()));

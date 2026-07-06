@@ -4,7 +4,6 @@ INTERFACE [arm && mmu && cpu_virt]:
 #include "cpubits.h"
 #include "mem_unit.h"
 #include "minmax.h"
-#include <cxx/conditionals>
 
 EXTENSION class Page
 {
@@ -51,18 +50,21 @@ public:
     return (vtcr_sl0()          <<  6)  // SL0
             | (pa_range         << 16)  // PS
             | ((64U - pa_bits)  <<  0)  // T0SZ
-            | cxx::const_ite<Mem_unit::Asid_bits == 16>(1 << 19, 0); // VS
+            | (Mem_unit::asid_bits() == 16 ? 1 << 19 : 0); // (VS) VMID size
   }
+
+  static Mword tcr_bits()
+  { return Ttbcr_bits; }
 };
 
 //---------------------------------------------------------------------------
 INTERFACE [arm && mmu && !cpu_virt]:
 
-#include "mem_unit.h"
+#include "cpubits.h"
 
 EXTENSION class Page
 {
-public:
+private:
   enum
   {
     Ttbcr_bits =   (Tcr_attribs <<  8) // (IRGN0)
@@ -72,7 +74,15 @@ public:
                  | (0UL  << 14) // (TG0)  Page granularity 4 KiB
                  | (2UL  << 30) // (TG1)  Page granularity 4 KiB
                  | (5UL  << 32) // (IPS)  Physical address size 48 bits
-                                // (AS)   ASID Size
-                 | cxx::const_ite<Mem_unit::Asid_bits == 16>(1UL << 36, 0UL)
   };
+
+public:
+  static Mword tcr_bits()
+  {
+    Mword as = 0;
+    if constexpr (TAG_ENABLED(arm_asid16))
+      if (Cpubits::has_16bit_asids())
+        as = Mword{1} << 36;        // (AS) ASID size: 16 bits
+    return Ttbcr_bits | as;
+  }
 };

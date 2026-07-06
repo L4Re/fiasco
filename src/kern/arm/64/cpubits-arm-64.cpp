@@ -9,6 +9,14 @@ public:
                                                    44, 48, 52, 56 };
 };
 
+PUBLIC static inline
+bool Cpubits::has_16bit_asids()
+{
+  Mword mmfr0;
+  asm ("mrs %0, ID_AA64MMFR0_EL1" : "=r"(mmfr0));
+  return (mmfr0 & 0xf0U) == 0x20 ? true : false;
+}
+
 // ------------------------------------------------------------------------
 INTERFACE [arm && !arm_single_pt]:
 

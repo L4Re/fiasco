@@ -55,7 +55,7 @@ Kernel_thread::boot_app_cpus()
   if constexpr (!Proc::Is_hyp)
     _tmp->ttbr_usr = cxx::int_value<Phys_mem_addr>(Kernel_task::kernel_task()->dir_phys());
 
-  _tmp->tcr   = Page::Ttbcr_bits;
+  _tmp->tcr   = Page::tcr_bits();
   boot_app_cpu_gic(_tmp);
 
   asm volatile ("dsb sy" : : : "memory");

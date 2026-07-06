@@ -838,7 +838,8 @@ INTERFACE [(arm_v6 || arm_v7 || arm_v8) && !explicit_asid]:
 EXTENSION class Mem_space
 {
 public:
-  using Asid_alloc = Asid_alloc_t<Unsigned64, Mem_unit::Asid_bits, Asid_base>;
+  using Asid_alloc = Asid_alloc_t<Unsigned64, Mem_unit::Max_asid_bits,
+                                  Asid_base, Mem_unit::asid_num>;
   using Asid = Asid_alloc::Asid;
   using Asids = Asid_alloc::Asids_per_cpu;
   static constexpr bool Have_asids = true;
