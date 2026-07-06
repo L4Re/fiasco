@@ -9,7 +9,7 @@ public:
                                                    44, 48, 52, 56 };
 };
 
-PUBLIC static inline
+PUBLIC static inline ALWAYS_INLINE
 bool Cpubits::has_16bit_asids()
 {
   Mword mmfr0;
