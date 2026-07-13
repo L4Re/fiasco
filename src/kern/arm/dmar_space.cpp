@@ -256,7 +256,7 @@ Dmar_space::destroy(Kobjects_list &reap_list) override
 }
 
 PUBLIC
-Dmar_space::~Dmar_space()
+Dmar_space::~Dmar_space() override
 {
   remove_from_all_iommus();
 
