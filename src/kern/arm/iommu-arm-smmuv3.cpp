@@ -1685,7 +1685,9 @@ Iommu::remove(Iommu_domain &domain, Address pt_phys_addr)
   if (!domain.is_bound(this))
     return;
 
-  Unsigned32 base_stream_id = 0, table_size = 0;
+  Unsigned32 base_stream_id = 0;
+  Unsigned32 table_size = 0;
+
   while (Ste_ptr ste_table = iter_ste_tables(&base_stream_id, &table_size))
     {
       for (unsigned i = 0; i < table_size; i++)
