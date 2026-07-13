@@ -1155,22 +1155,6 @@ private:
 };
 
 // ------------------------------------------------------------------
-INTERFACE [iommu_arm_smmu_v3 && !arm_iommu_stage2]:
-
-EXTENSION class Iommu_domain
-{
-private:
-  Iommu_smmu_v3::Cd const *get_or_init_cd(unsigned ias, unsigned virt_addr_size,
-                                          Address pt_phys_addr);
-
-  /// Context descriptor, used for all bindings of this domain (across SMMUs
-  /// and across stream IDs). Initialized when the domain is bound for the first
-  /// time. The context descriptor is only required if the SMMU does not
-  /// support stage 2 translation.
-  Iommu_smmu_v3::Cd _cd;
-};
-
-// ------------------------------------------------------------------
 IMPLEMENTATION [iommu_arm_smmu_v3]:
 
 IMPLEMENT
@@ -1229,7 +1213,17 @@ Iommu_domain::del_binding(Iommu const *iommu)
 // -----------------------------------------------------------
 IMPLEMENTATION [iommu_arm_smmu_v3 && !arm_iommu_stage2]:
 
-IMPLEMENT
+EXTENSION class Iommu_domain
+{
+private:
+  /// Context descriptor, used for all bindings of this domain (across SMMUs
+  /// and across stream IDs). Initialized when the domain is bound for the first
+  /// time. The context descriptor is only required if the SMMU does not
+  /// support stage 2 translation.
+  Iommu_smmu_v3::Cd _cd;
+};
+
+PRIVATE
 Iommu_smmu_v3::Cd const *
 Iommu_domain::get_or_init_cd(unsigned ias, unsigned virt_addr_size,
                              Address pt_phys_addr)
