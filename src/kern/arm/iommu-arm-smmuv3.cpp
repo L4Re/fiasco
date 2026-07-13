@@ -1173,6 +1173,127 @@ private:
 // ------------------------------------------------------------------
 IMPLEMENTATION [iommu_arm_smmu_v3]:
 
+IMPLEMENT
+Iommu_domain::~Iommu_domain()
+{
+  Iommu_smmu_v3::_asid_alloc->free_id_if_valid(&_asid);
+}
+
+IMPLEMENT inline
+void
+Iommu_domain::sync_with_domain_state() const
+{
+  auto g = lock_guard(_lock);
+}
+
+IMPLEMENT inline
+bool
+Iommu_domain::is_bound(Iommu const *iommu) const
+{
+  return atomic_load(&_bindings[iommu->idx()]) > 0;
+}
+
+IMPLEMENT inline
+bool
+Iommu_domain::add_binding(Iommu const *iommu)
+{
+  auto g = lock_guard(_lock);
+
+  if (_bindings[iommu->idx()] >= Max_bindings_per_iommu) [[unlikely]]
+    return false;
+
+  atomic_store(&_bindings[iommu->idx()], _bindings[iommu->idx()] + 1);
+  return true;
+}
+
+IMPLEMENT inline
+Unsigned32
+Iommu_domain::del_binding(Iommu const *iommu)
+{
+  auto g = lock_guard(_lock);
+
+  if (_bindings[iommu->idx()] > 0) [[likely]]
+    {
+      auto new_count = _bindings[iommu->idx()] - 1;
+      atomic_store(&_bindings[iommu->idx()], new_count);
+      return new_count;
+    }
+  else
+    {
+      g.reset(); // better not hold the lock while printing
+      WARNX(Error, "IOMMU: Attempt to delete binding while no bindings exist.\n");
+      return 0;
+    }
+}
+
+// -----------------------------------------------------------
+IMPLEMENTATION [iommu_arm_smmu_v3 && !arm_iommu_stage2]:
+
+IMPLEMENT
+Iommu_smmu_v3::Cd const *
+Iommu_domain::get_or_init_cd(unsigned ias, unsigned virt_addr_size,
+                             Address pt_phys_addr)
+{
+  auto g = lock_guard(_lock);
+
+  // Already initialized?
+  if (_cd.v())
+    return &_cd;
+
+  unsigned long asid = get_or_alloc_asid();
+  if (asid == Iommu_smmu_v3::Invalid_asid)
+    // No ASID available.
+    return nullptr;
+
+  // Region size is 2^(64 - T0SZ) -> T0SZ = 64 - input_address_size
+  _cd.t0sz() = 64 - virt_addr_size;
+  _cd.tg0() = 0; // 4k
+  _cd.ir0() = Iommu_smmu_v3::Cr1::Cache_wb;
+  _cd.or0() = Iommu_smmu_v3::Cr1::Cache_wb;
+  _cd.sh0() = Iommu_smmu_v3::Cr1::Share_is;
+  _cd.epd0() = 0; // Enable TT0 translation table walk.
+  _cd.endi() = 0; // Translation table endianness is little endian.
+  _cd.epd1() = 1; // Disable TT1 translation table walk.
+  _cd.v() = 1; // Valid
+  _cd.ips() = Iommu_smmu_v3::address_size_encode(ias);
+  _cd.affd() = 1; // An Access flag fault never occurs.
+  _cd.wxn() = 0;
+  _cd.uwxn() = 0;
+  _cd.aa64() = 1; // Use AArch64 format
+  _cd.hd() = 0; // Disable hardware update of Dirty flags
+  _cd.ha() = 0; // Disable hardware update of Access flags
+  // Fault behavior
+  _cd.s() = 0; // Do not stall faulting transactions.
+  _cd.r() = Iommu::Log_faults; // Record faults in event queue.
+  _cd.a() = 1; // Translation faults result in an abort or bus error being
+               // returned to the device.
+  // The context is non-shared, do not participate in broadcast TLB.
+  _cd.aset() = 1;
+  _cd.asid() = asid;
+  _cd.ttb0() = pt_phys_addr;
+  _cd.mair0() = Iommu_smmu_v3::Mair0_bits;
+  _cd.mair1() = Iommu_smmu_v3::Mair1_bits;
+  _cd.amair0() = 0;
+  _cd.amair1() = 0;
+
+  // Ensure context descriptor is observable by the SMMU.
+  Iommu_smmu_v3::make_observable_before_cmd(&_cd);
+
+  return &_cd;
+}
+
+PRIVATE
+Iommu_smmu_v3::Cd const *
+Iommu_domain::get_cd_addr() const &
+{ return &_cd; }
+
+PRIVATE
+Iommu_smmu_v3::Cd const *
+Iommu_domain::get_cd_addr() const && = delete;
+
+// ------------------------------------------------------------------
+IMPLEMENTATION [iommu_arm_smmu_v3]:
+
 #include "feature.h"
 
 Static_object<Iommu_smmu_v3::Asid_alloc> Iommu_smmu_v3::_asid_alloc;
@@ -2032,12 +2153,6 @@ Iommu_smmu_v3::init_asid_alloc()
 }
 
 IMPLEMENT
-Iommu_domain::~Iommu_domain()
-{
-  Iommu_smmu_v3::_asid_alloc->free_id_if_valid(&_asid);
-}
-
-IMPLEMENT
 void
 Iommu_smmu_v3::tlb_flush()
 {
@@ -2047,53 +2162,6 @@ Iommu_smmu_v3::tlb_flush()
   // - SMMU is non-coherent: Pte_iommu::write_back() cleaned the cache.
 
   send_cmd_sync(Cmd::tlbi_nsnh_all());
-}
-
-IMPLEMENT inline
-void
-Iommu_domain::sync_with_domain_state() const
-{
-  auto g = lock_guard(_lock);
-}
-
-IMPLEMENT inline
-bool
-Iommu_domain::is_bound(Iommu const *iommu) const
-{
-  return atomic_load(&_bindings[iommu->idx()]) > 0;
-}
-
-IMPLEMENT inline
-bool
-Iommu_domain::add_binding(Iommu const *iommu)
-{
-  auto g = lock_guard(_lock);
-
-  if (_bindings[iommu->idx()] >= Max_bindings_per_iommu) [[unlikely]]
-    return false;
-
-  atomic_store(&_bindings[iommu->idx()], _bindings[iommu->idx()] + 1);
-  return true;
-}
-
-IMPLEMENT inline
-Unsigned32
-Iommu_domain::del_binding(Iommu const *iommu)
-{
-  auto g = lock_guard(_lock);
-
-  if (_bindings[iommu->idx()] > 0) [[likely]]
-    {
-      auto new_count = _bindings[iommu->idx()] - 1;
-      atomic_store(&_bindings[iommu->idx()], new_count);
-      return new_count;
-    }
-  else
-    {
-      g.reset(); // better not hold the lock while printing
-      WARNX(Error, "IOMMU: Attempt to delete binding while no bindings exist.\n");
-      return 0;
-    }
 }
 
 /**
@@ -2211,68 +2279,6 @@ Iommu_smmu_v3::deconfigure_ste(Ste_ptr ste, Unsigned32 stream_id,
 
 // -----------------------------------------------------------
 IMPLEMENTATION [iommu_arm_smmu_v3 && !arm_iommu_stage2]:
-
-IMPLEMENT
-Iommu_smmu_v3::Cd const *
-Iommu_domain::get_or_init_cd(unsigned ias, unsigned virt_addr_size,
-                             Address pt_phys_addr)
-{
-  auto g = lock_guard(_lock);
-
-  // Already initialized?
-  if (_cd.v())
-    return &_cd;
-
-  unsigned long asid = get_or_alloc_asid();
-  if (asid == Iommu_smmu_v3::Invalid_asid)
-    // No ASID available.
-    return nullptr;
-
-  // Region size is 2^(64 - T0SZ) -> T0SZ = 64 - input_address_size
-  _cd.t0sz() = 64 - virt_addr_size;
-  _cd.tg0() = 0; // 4k
-  _cd.ir0() = Iommu_smmu_v3::Cr1::Cache_wb;
-  _cd.or0() = Iommu_smmu_v3::Cr1::Cache_wb;
-  _cd.sh0() = Iommu_smmu_v3::Cr1::Share_is;
-  _cd.epd0() = 0; // Enable TT0 translation table walk.
-  _cd.endi() = 0; // Translation table endianness is little endian.
-  _cd.epd1() = 1; // Disable TT1 translation table walk.
-  _cd.v() = 1; // Valid
-  _cd.ips() = Iommu_smmu_v3::address_size_encode(ias);
-  _cd.affd() = 1; // An Access flag fault never occurs.
-  _cd.wxn() = 0;
-  _cd.uwxn() = 0;
-  _cd.aa64() = 1; // Use AArch64 format
-  _cd.hd() = 0; // Disable hardware update of Dirty flags
-  _cd.ha() = 0; // Disable hardware update of Access flags
-  // Fault behavior
-  _cd.s() = 0; // Do not stall faulting transactions.
-  _cd.r() = Iommu::Log_faults; // Record faults in event queue.
-  _cd.a() = 1; // Translation faults result in an abort or bus error being
-               // returned to the device.
-  // The context is non-shared, do not participate in broadcast TLB.
-  _cd.aset() = 1;
-  _cd.asid() = asid;
-  _cd.ttb0() = pt_phys_addr;
-  _cd.mair0() = Iommu_smmu_v3::Mair0_bits;
-  _cd.mair1() = Iommu_smmu_v3::Mair1_bits;
-  _cd.amair0() = 0;
-  _cd.amair1() = 0;
-
-  // Ensure context descriptor is observable by the SMMU.
-  Iommu_smmu_v3::make_observable_before_cmd(&_cd);
-
-  return &_cd;
-}
-
-PRIVATE
-Iommu_smmu_v3::Cd const *
-Iommu_domain::get_cd_addr() const &
-{ return &_cd; }
-
-PRIVATE
-Iommu_smmu_v3::Cd const *
-Iommu_domain::get_cd_addr() const && = delete;
 
 PRIVATE
 void
