@@ -29,9 +29,16 @@ config PF_ARM_GEN_SELECT_ACPI
 	select ARM_ACPI
 
 config ARM_IOMMU_MAX
-	int "Maximum number of IOMMUs support" if PF_ARM_GEN_SELECT_SUPPORT
+	int "Maximum number of supported IOMMUs" if PF_ARM_GEN_SELECT_SUPPORT
 	depends on IOMMU
 	default 32
+	help
+	  The size of some IOMMU-related data structures depend on the number
+	  of supported IOMMUs. Setting the value too high increases the memory
+	  allocation overhead. However, a value that is too low prevents the
+	  kernel from booting.
+
+	  If in doubt, leave the default (32).
 
 config PF_ARM_GEN_SELECT_SMMU_V3
 	bool "Support SMMUv3" if PF_ARM_GEN_SELECT_SUPPORT
