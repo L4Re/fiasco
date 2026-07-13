@@ -1,16 +1,16 @@
 INTERFACE [iommu_arm_smmu_v3]:
 
-#include "types.h"
-#include "spin_lock.h"
+#include <cxx/bitfield>
 #include "boot_alloc.h"
+#include "kmem_slab.h"
 #include "mem_chunk.h"
 #include "minmax.h"
 #include "mmio_register_block.h"
 #include "panic.h"
-#include "cxx/bitfield"
-#include "kmem_slab.h"
 #include "simple_id_alloc.h"
+#include "spin_lock.h"
 #include "timer.h"
+#include "types.h"
 
 class Iommu_domain;
 

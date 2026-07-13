@@ -1,10 +1,10 @@
 INTERFACE [iommu_arm_smmu_v2]:
 
-#include "types.h"
-#include "spin_lock.h"
+#include <cxx/bitfield>
 #include "boot_alloc.h"
 #include "mmio_register_block.h"
-#include "cxx/bitfield"
+#include "spin_lock.h"
+#include "types.h"
 
 /*
  * Iommu implementation for ARM SMMUv1 and SMMUv2.
