@@ -1618,7 +1618,7 @@ Iommu::bind(Unsigned32 stream_id, Iommu_domain &domain, Address pt_phys_addr,
     }
 
   // Additional domain sync to ensure that STE is visible for unlocked access in
-  // Iommu::remove().
+  // the Iommu::remove() method.
   domain.sync_with_domain_state();
 
   return 0;
