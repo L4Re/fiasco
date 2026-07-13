@@ -77,7 +77,6 @@ IMPLEMENTATION[ia32 || amd64]:
 #include "jdb_screen.h"
 #include "kernel_console.h"
 #include "keycodes.h"
-#include "kernel_uart.h"
 #include "kernel_task.h"
 #include "kmem.h"
 #include "koptions.h"
