@@ -23,6 +23,7 @@ class Sched_context : public cxx::D_list_item
   template<typename T>
   friend struct Jdb_thread_list_policy;
 
+public:
   union Sp
   {
     L4_sched_param p;
@@ -30,7 +31,6 @@ class Sched_context : public cxx::D_list_item
     L4_sched_param_fixed_prio fixed_prio;
   };
 
-public:
   typedef cxx::Sd_list<Sched_context> Fp_list;
 
   class Ready_queue_base : public Ready_queue_fp<Sched_context>
@@ -174,6 +174,17 @@ Sched_context::check_param(L4_sched_param const *_p)
 
 PUBLIC
 void
+Sched_context::get(Sp *p) const
+{
+  p->fixed_prio = L4_sched_param_fixed_prio{};
+  p->fixed_prio.sched_class = L4_sched_param_fixed_prio::Class;
+  p->fixed_prio.length = sizeof(L4_sched_param_fixed_prio);
+  p->fixed_prio.quantum = _quantum;
+  p->fixed_prio.prio = regular_prio();
+}
+
+PUBLIC
+void
 Sched_context::set(L4_sched_param const *_p)
 {
   Sp const *p = reinterpret_cast<Sp const *>(_p);
@@ -257,12 +268,26 @@ Sched_context::dominates(Sched_context *sc)
 IMPLEMENTATION [sched_fixed_prio && !prio_inherit]:
 
 PRIVATE inline
+unsigned short
+Sched_context::regular_prio() const
+{
+  return _prio;
+}
+
+PRIVATE inline
 void
 Sched_context::sync_pi_prio()
 {}
 
 //----------------------------------------------------------------------------
 IMPLEMENTATION [sched_fixed_prio && prio_inherit]:
+
+PRIVATE inline
+unsigned short
+Sched_context::regular_prio() const
+{
+  return _pi_regular_prio;
+}
 
 PRIVATE
 void

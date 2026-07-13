@@ -21,13 +21,13 @@ class Sched_context : public Sched_context_wfq<Sched_context>
   friend class Jdb_thread_list_policy;
   friend class Sched_context_wfq<Sched_context>;
 
+public:
   union Sp
   {
     L4_sched_param p;
     L4_sched_param_wfq wfq;
   };
 
-public:
   typedef Sched_context Wfq_sc;
   typedef Ready_queue_wfq<Sched_context> Ready_queue_base;
   Context *context() const { return context_of(this); }
@@ -109,6 +109,17 @@ Sched_context::check_param(L4_sched_param const *_p)
     return -L4_err::EInval;
 
   return 0;
+}
+
+PUBLIC
+void
+Sched_context::get(Sp *p) const
+{
+  p->wfq = L4_sched_param_wfq{};
+  p->wfq.sched_class = L4_sched_param_wfq::Class;
+  p->wfq.length = sizeof(L4_sched_param_wfq);
+  p->wfq.quantum = _q;
+  p->wfq.weight = _w;
 }
 
 PUBLIC

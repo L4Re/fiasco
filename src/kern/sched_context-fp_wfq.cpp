@@ -10,14 +10,6 @@ class Sched_context
   friend class Jdb_thread_list;
   friend class Ready_queue_wfq<Sched_context>;
 
-  union Sp
-  {
-    L4_sched_param p;
-    L4_sched_param_legacy legacy_fixed_prio;
-    L4_sched_param_fixed_prio fixed_prio;
-    L4_sched_param_wfq wfq;
-  };
-
   struct Ready_list_item_concept
   {
     typedef Sched_context Item;
@@ -31,6 +23,14 @@ class Sched_context
 
 public:
   enum Type { Fixed_prio, Wfq };
+
+  union Sp
+  {
+    L4_sched_param p;
+    L4_sched_param_legacy legacy_fixed_prio;
+    L4_sched_param_fixed_prio fixed_prio;
+    L4_sched_param_wfq wfq;
+  };
 
   typedef cxx::Sd_list<Sched_context, Ready_list_item_concept> Fp_list;
 
@@ -200,6 +200,28 @@ Sched_context::check_param(L4_sched_param const *_p)
     }
 
   return 0;
+}
+
+PUBLIC
+void
+Sched_context::get(Sp *p) const
+{
+  if (_t == Fixed_prio)
+    {
+      p->fixed_prio = L4_sched_param_fixed_prio{};
+      p->fixed_prio.sched_class = L4_sched_param_fixed_prio::Class;
+      p->fixed_prio.length = sizeof(L4_sched_param_fixed_prio);
+      p->fixed_prio.quantum = _sc.fp._q;
+      p->fixed_prio.prio = _sc.fp._p;
+    }
+  else
+    {
+      p->wfq = L4_sched_param_wfq{};
+      p->wfq.sched_class = L4_sched_param_wfq::Class;
+      p->wfq.length = sizeof(L4_sched_param_wfq);
+      p->wfq.quantum = _sc.wfq._q;
+      p->wfq.weight = _sc.wfq._w;
+    }
 }
 
 PUBLIC
