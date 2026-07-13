@@ -1102,6 +1102,113 @@ Iommu_smmu_v2::setup_irqs(unsigned const *irqs, unsigned num_irqs,
     }
 }
 
+
+// ------------------------------------------------------------------
+IMPLEMENTATION [iommu_arm_smmu_v2 && dt]:
+
+#include "dt.h"
+#include "kmem_mmio.h"
+
+namespace {
+
+/**
+ * Set up the fault reporting interrupts of an SMMUv1/v2 from the device tree.
+ *
+ * The interrupts of an SMMUv1/v2 node are the global fault interrupts, their
+ * number given by the "#global-interrupts" property, followed by the context
+ * fault interrupts.
+ */
+void setup_smmu_v2_irqs_dt(Iommu_smmu_v2 *smmu, Dt::Node n)
+{
+  enum { Max_irqs = 128 };
+  unsigned irqs[Max_irqs];
+  unsigned num_irqs = 0;
+  while (num_irqs < Max_irqs)
+    {
+      unsigned irq = Dt::get_arm_gic_irq(n, num_irqs);
+      if (irq == ~0u)
+        break;
+      irqs[num_irqs++] = irq;
+    }
+
+  if (!num_irqs)
+    // Interrupts are only used for fault reporting, an SMMU without them is
+    // usable nevertheless.
+    return;
+
+  unsigned num_global = n.get_prop_default_u32("#global-interrupts", 1);
+  if (num_global > num_irqs)
+    num_global = num_irqs;
+
+  smmu->setup_irqs(irqs, num_irqs, num_global);
+}
+
+}
+
+PRIVATE static
+unsigned
+Iommu_smmu_v2::init_platform_dt()
+{
+  struct Compat
+  {
+    char const *compatible;
+    Iommu_smmu_v2::Version version;
+  };
+  static constexpr Compat compats[] =
+  {
+    { "arm,smmu-v1", Iommu_smmu_v2::Version::Smmu_v1 },
+    { "arm,mmu-400", Iommu_smmu_v2::Version::Smmu_v1 },
+    { "arm,mmu-401", Iommu_smmu_v2::Version::Smmu_v1 },
+    { "arm,smmu-v2", Iommu_smmu_v2::Version::Smmu_v2 },
+    { "arm,mmu-500", Iommu_smmu_v2::Version::Smmu_v2 },
+  };
+
+  unsigned i = 0;
+  for (unsigned c = 0; c < cxx::size(compats); ++c)
+    Dt::nodes_by_compatible(compats[c].compatible, [&i, c](Dt::Node n)
+      {
+        if (!n.is_enabled())
+          return;
+
+        // A node may carry several of the covered compatible strings. Only
+        // handle it for the first table entry it matches.
+        for (unsigned prev = 0; prev < c; ++prev)
+          if (n.check_compatible(compats[prev].compatible))
+            return;
+
+        if (Va64_support
+            && compats[c].version == Iommu_smmu_v2::Version::Smmu_v1)
+          {
+            // SMMUv1 implementations do not support the AArch64 page table
+            // format used on 64-bit kernels.
+            WARN("IOMMU: Skipping %s, not supported on 64-bit kernels.\n",
+                 compats[c].compatible);
+            return;
+          }
+
+        uint64_t base, size;
+        if (!n.get_reg(0, &base, &size))
+          return;
+
+        auto *smmu = new Boot_object<Iommu_smmu_v2>();
+        smmu->setup(compats[c].version, Kmem_mmio::map(base, size));
+        setup_smmu_v2_irqs_dt(smmu, n);
+        ++i;
+      });
+
+  printf("Number of arm,smmu-v1/v2: %u\n", i);
+
+  return i;
+}
+
+IMPLEMENT static
+void
+Iommu_smmu_v2::init_platform()
+{
+  if (Dt::have_fdt())
+    init_platform_dt();
+}
+
 // ------------------------------------------------------------------
 IMPLEMENTATION [iommu_arm_smmu_v2]:
 
