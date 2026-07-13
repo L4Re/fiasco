@@ -1,6 +1,6 @@
 INTERFACE:
 
-enum Thread_state
+enum Thread_state : Mword
 {
   /// TCB unallocated
   Thread_invalid          = 0,
