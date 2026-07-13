@@ -23,6 +23,8 @@ public:
   unsigned idx() const
   { return this - _iommus.begin(); }
 
+  enum { Coherent = TAG_ENABLED(arm_iommu_coherent) };
+
 private:
   /// Platform specific IOMMU initialization.
   static void init_platform();
@@ -98,16 +100,6 @@ private:
   void write_reg(typename REG::Val_type value)
   { return write_reg<REG, ACCESS>(REG::from_raw(value)); }
 };
-
-// ------------------------------------------------------------------
-INTERFACE [iommu && arm_iommu_coherent]:
-
-EXTENSION class Iommu { public: enum { Coherent = 1 }; };
-
-// ------------------------------------------------------------------
-INTERFACE [iommu && !arm_iommu_coherent]:
-
-EXTENSION class Iommu { public: enum { Coherent = 0 }; };
 
 // ------------------------------------------------------------------
 IMPLEMENTATION [iommu && dt]:
