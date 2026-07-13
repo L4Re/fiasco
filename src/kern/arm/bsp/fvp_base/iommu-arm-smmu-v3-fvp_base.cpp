@@ -3,7 +3,7 @@ IMPLEMENTATION [arm && iommu && pf_fvp_base]:
 #include "kmem_mmio.h"
 
 IMPLEMENT
-bool
+void
 Iommu::init_platform()
 {
   static_assert(Max_iommus >= 1, "Unexpected number of IOMMUs.");
@@ -23,6 +23,4 @@ Iommu::init_platform()
 
   void *v = Kmem_mmio::map(base_addr, 0x100000);
   _iommus[0].setup(v, 106, 111);
-
-  return true;
 }

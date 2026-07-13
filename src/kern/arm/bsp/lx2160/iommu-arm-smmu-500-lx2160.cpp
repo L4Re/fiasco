@@ -3,7 +3,7 @@ IMPLEMENTATION [arm && iommu && pf_lx2160]:
 #include "kmem_mmio.h"
 
 IMPLEMENT
-bool
+void
 Iommu::init_platform()
 {
   static_assert(Max_iommus >= 1, "Unexpected number of IOMMUs.");
@@ -27,6 +27,4 @@ Iommu::init_platform()
   void *v = Kmem_mmio::map(0x5000000, 0x800000);
   _iommus[0].setup(Version::Smmu_v2, v);
   _iommus[0].setup_irqs(nonsec_irqs, cxx::size(nonsec_irqs), 1);
-
-  return true;
 }

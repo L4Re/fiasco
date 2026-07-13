@@ -25,7 +25,7 @@ public:
 
 private:
   /// Platform specific IOMMU initialization.
-  static bool init_platform();
+  static void init_platform();
   /// Common IOMMU initialization.
   static void init_common();
   static Iommu_array _iommus;
@@ -226,12 +226,13 @@ IMPLEMENTATION [iommu && (dt || arm_acpi)]:
 #include "dt.h"
 
 IMPLEMENT
-bool
+void
 Iommu::init_platform()
 {
   if (Dt::have_fdt())
-    return init_platform_dt();
-  return init_platform_acpi();
+    init_platform_dt();
+  else
+    init_platform_acpi();
 }
 
 // ------------------------------------------------------------------

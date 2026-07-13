@@ -3,7 +3,7 @@ IMPLEMENTATION [arm && iommu && pf_layerscape]:
 #include "kmem_mmio.h"
 
 IMPLEMENT
-bool
+void
 Iommu::init_platform()
 {
   static_assert(Max_iommus >= 4, "Unexpected number of IOMMUs.");
@@ -26,6 +26,4 @@ Iommu::init_platform()
       _iommus[i].setup(Version::Smmu_v1, v);
       _iommus[i].setup_irqs(&nonsec_irqs[i], 1, 1);
     }
-
-  return true;
 }

@@ -126,7 +126,7 @@ IMPLEMENTATION [arm && iommu && pf_qcom]:
 #include "warn.h"
 
 IMPLEMENT
-bool
+void
 Iommu::init_platform()
 {
   static_assert(Max_iommus == 1 || Max_iommus == 2,
@@ -164,6 +164,4 @@ Iommu::init_platform()
       _iommus[1].setup(Version::Smmu_v2, base, gpu_smmu.mask);
       _iommus[1].setup_irqs(gpu_smmu_irqs, cxx::size(gpu_smmu_irqs), 1);
     }
-
-  return true;
 }
