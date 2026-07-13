@@ -56,7 +56,7 @@ Startup::stage2()
   Kip_init::init();
   Kmem_alloc::init();
 
-  Cpu::cpus.cpu(Cpu_number::boot_cpu()).identify();
+  Cpu::cpus.cpu(Cpu_number::boot_cpu()).identify(false);
   // initialize initial page tables (also used for other CPUs later)
   Mem_space::init_page_sizes();
   Kmem::init_mmu();

@@ -401,7 +401,7 @@ struct Ia32_intel_microcode
     return (Cpu::rdmsr(Msr::Ia32_bios_sign_id) & 0xffffffff00000000) | a;
   }
 
-  static Header const *find(Unsigned64 rev_sig)
+  static Header const *find(Unsigned64 rev_sig, bool verbose)
   {
     // get platform ID from IA32_PLATFORM_ID msr
     Unsigned32 proc_mask = 1U << ((Cpu::rdmsr(Msr::Ia32_platform_id) >> 50) & 0x7);
@@ -412,7 +412,8 @@ struct Ia32_intel_microcode
 
     if (reinterpret_cast<Address>(pos) & 0xf)
       {
-        printf("warning: microcode updates misaligned, skipping\n");
+        if (verbose)
+          WARN("microcode update @ %p misaligned, skipping module\n", pos);
         return nullptr;
       }
 
@@ -426,29 +427,41 @@ struct Ia32_intel_microcode
         unsigned ts = u->total_size();
         if (ts & 0x3ff)
           {
-            printf("warning: microcode update size invalid: %x\n", ts);
+            if (verbose)
+              WARN("microcode update @ %p: size %x invalid -- skipping module\n",
+                   pos, ts);
             return nullptr;
           }
 
         if (pos + ts > ia32_intel_microcode_end)
           {
-            printf("warning: truncated microcode update, skip\n");
+            if (verbose)
+              WARN("microcode update @ %p: truncated -- skipping module\n", pos);
             return nullptr;
           }
 
         if (u->loader_rev != 1)
           {
-            printf("warning: microcode update, unknown loader revision: %x\n",
-                   u->loader_rev);
+            if (verbose)
+              WARN("microcode update @ %p: unknown loader revision %x -- skipping\n",
+                   pos, u->loader_rev);
 
             pos += ts;
             continue;
           }
 
+        if (verbose)
+          printf("Microcode update @ %p: %04x-%02x-%02x, sig %08x, rev %08x.\n",
+                 pos, u->date_year, u->date_month, u->date_day, u->signature,
+                 u->update_rev);
+
         if (u->match(rev_sig, proc_mask))
           {
             if (!u->checksum_valid())
-              printf("warning: microcode update checksum error, skipping\n");
+              {
+                if (verbose)
+                  WARN("microcode update @ %p: checksum error -- skipping\n", pos);
+              }
             else if (!update || update->update_rev < u->update_rev)
               update = u;
           }
@@ -459,10 +472,10 @@ struct Ia32_intel_microcode
     return update;
   }
 
-  static bool load()
+  static bool load(bool verbose)
   {
     Unsigned64 rev_sig = Cpu::get_bios_sign_id();
-    auto const *update = find(rev_sig);
+    auto const *update = find(rev_sig, verbose);
     if (!update)
       return false;
 
@@ -479,6 +492,7 @@ struct Ia32_intel_microcode
 
     if (rev_sig == n)
       {
+        // ignore `verbose`: print this warning for every CPU
         WARNX(Error,
               "microcode not updated for CPU %x: Have rev %llx/%08llx (%04x-%02x-%02x)\n",
               cpu_id, rev_sig >> 32, rev_sig,
@@ -486,7 +500,8 @@ struct Ia32_intel_microcode
         return false;
       }
 
-    printf("successful microcode update for CPU %x: rev %llx -> %llx (%04x-%02x-%02x)\n",
+    // ignore `verbose`: print this information for every CPU
+    printf("Successful microcode update for CPU %x: rev %llx -> %llx (%04x-%02x-%02x)\n",
            cpu_id, rev_sig >> 32, n >> 32,
            update->date_year, update->date_month, update->date_day);
     return true;
@@ -696,7 +711,7 @@ Cpu::get_features()
  */
 PUBLIC FIASCO_INIT_CPU
 void
-Cpu::identify()
+Cpu::identify(bool verbose)
 {
   Unsigned32 eflags = get_flags();
 
@@ -724,7 +739,7 @@ Cpu::identify()
       _vendor = static_cast<Cpu::Vendor>(i);
 
       if (_vendor == Vendor_intel)
-        Ia32_intel_microcode::load();
+        Ia32_intel_microcode::load(verbose);
 
       init_indirect_branch_mitigation();
 
@@ -942,7 +957,7 @@ Cpu::pm_resume()
     set_tss();
 
   if (_vendor == Vendor_intel)
-    Ia32_intel_microcode::load();
+    Ia32_intel_microcode::load(false);
 
   init_indirect_branch_mitigation();
 
@@ -1298,7 +1313,7 @@ IMPLEMENT FIASCO_INIT_CPU
 void
 Cpu::init(Cpu_number cpu)
 {
-  identify();
+  identify(cpu == Cpu_number::boot_cpu());
 
   init_lbr_type();
   init_bts_type();
