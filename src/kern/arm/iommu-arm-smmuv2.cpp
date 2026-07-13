@@ -374,33 +374,7 @@ private:
     Unsigned64 pt_phys() const
     { return _pt_phys; }
 
-    void reset()
-    {
-      _pt_phys = 0;
-      // Page table is no longer bound to the context bank, invalidate VMID of
-      // Dmar_space.
-      if (_space_id)
-        {
-          _space_id->vmid(_mmu->idx(), Invalid_vmid);
-          _space_id = nullptr;
-        }
-
-      // Disable context bank
-      write_reg<Cb_sctlr>(0);
-
-      // TLBs have to be invalidated after context bank is disabled
-      _mmu->tlb_invalidate_vmid(vmid());
-
-      if (Iommu::Log_faults)
-        {
-          // Clear context fault related registers
-          write_reg<Cb_fsr>(~0U);
-          write_reg<Cb_far, Reg_access::Non_atomic>(0ULL);
-          write_reg<Cb_fsynr0>(0);
-          write_reg<Cb_fsynr1>(0);
-          write_reg<Cbfrsynra>(0);
-        }
-    }
+    void reset();
 
     void init(Iommu_smmu_v2 *mmu, Unsigned8 idx, void *reg_addr)
     {
@@ -410,87 +384,7 @@ private:
       reset();
     }
 
-    void set(Address pt_phys, Space_id *space_id)
-    {
-      // If context bank is already in use, just increase the reference count.
-      if (is_used())
-        {
-          // Identical page tables are managed by the same context bank.
-          assert(_pt_phys == pt_phys);
-          return;
-        }
-
-      _pt_phys = pt_phys;
-      _space_id = space_id;
-
-      // Set VMID of the bound space for this IOMMU. Must happen before configuring
-      // the Dmar_space on the IOMMU, to ensure that TLB flushes from other cores
-      // see the correct VMID!
-      if (_space_id)
-        _space_id->vmid(_mmu->idx(), vmid());
-
-      // TLBs have to be invalidated before context bank is enabled
-      _mmu->tlb_invalidate_vmid(vmid());
-
-      // Configure VMID and context bank type.
-      Cbar cbar;
-      cbar.vmid() = vmid();
-      cbar.type() = CBAR_TYPE_STAGE_2;
-      if (Iommu::Log_faults)
-        cbar.irptndx() = _irptndx;
-      write_reg(cbar);
-
-      Cb_tcr tcr;
-      // Configure shareability and cacheability for memory associated with
-      // the IOMMU page tables, according to the IOMMU's support for coherent
-      // page table walks.
-      if constexpr (Iommu::Coherent)
-        {
-          tcr.sh0() = TCR_SH_IS;
-          tcr.irgn0() = TCR_RGN_WBWA;
-          tcr.orgn0() = TCR_RGN_WBWA;
-        }
-      else
-        {
-          tcr.sh0() = TCR_SH_OS;
-          tcr.irgn0() = TCR_RGN_NC;
-          tcr.orgn0() = TCR_RGN_NC;
-        }
-
-      if constexpr (Va64_support)
-        {
-          tcr.pasize() = address_size_encode(_mmu->_oas);
-          // First page table is concatenated (10-bits), we skip level zero.
-          tcr.sl0() = TCR_64_SL0_LVL1_START;
-          // Region size is 2^(64 - T0SZ) -> T0SZ = 64 - input_address_size
-          tcr.t0sz() = 64 - _mmu->_ias;
-
-          // Enable AArch64 translation scheme
-          Cba2r cba2r;
-          cba2r.va64() = CBA2R_VA64;
-          write_reg(cba2r);
-        }
-      else
-        {
-          // We start at first level (AArch32 page tables have no level zero).
-          tcr.sl0() = TCR_SL0_LVL1_START;
-          // Region size is 2^(32 - T0SZ) -> T0SZ = 32 - input_address_size
-          tcr.t0sz() = 32 - _mmu->_ias;
-        }
-
-      write_reg(tcr);
-      write_reg<Cb_ttbr0, Reg_access::Non_atomic>(pt_phys);
-
-      // Enable context bank
-      Cb_sctlr sctlr;
-      sctlr.m() = 1;
-      // Return an abort to the device if a context fault occurs.
-      sctlr.cfre() = 1;
-      sctlr.cfie() = Iommu::Log_faults;
-      // Process transactions independently of any outstanding context fault.
-      sctlr.hupcf() = 1;
-      write_reg(sctlr);
-    }
+    void set(Address pt_phys, Space_id *space_id);
 
     void handle_fault();
   };
@@ -708,6 +602,120 @@ private:
 IMPLEMENTATION [iommu_arm_smmu_v2]:
 
 #include "panic.h"
+
+IMPLEMENT
+void
+Iommu_smmu_v2::Context_bank::reset()
+{
+  _pt_phys = 0;
+  // Page table is no longer bound to the context bank, invalidate VMID of
+  // Dmar_space.
+  if (_space_id)
+    {
+      _space_id->vmid(_mmu->idx(), Invalid_vmid);
+      _space_id = nullptr;
+    }
+
+  // Disable context bank
+  write_reg<Cb_sctlr>(0);
+
+  // TLBs have to be invalidated after context bank is disabled
+  _mmu->tlb_invalidate_vmid(vmid());
+
+  if (Iommu::Log_faults)
+    {
+      // Clear context fault related registers
+      write_reg<Cb_fsr>(~0U);
+      write_reg<Cb_far, Reg_access::Non_atomic>(0ULL);
+      write_reg<Cb_fsynr0>(0);
+      write_reg<Cb_fsynr1>(0);
+      write_reg<Cbfrsynra>(0);
+    }
+}
+
+IMPLEMENT
+void
+Iommu_smmu_v2::Context_bank::set(Address pt_phys, Space_id *space_id)
+{
+  // If context bank is already in use, just increase the reference count.
+  if (is_used())
+    {
+      // Identical page tables are managed by the same context bank.
+      assert(_pt_phys == pt_phys);
+      return;
+    }
+
+  _pt_phys = pt_phys;
+  _space_id = space_id;
+
+  // Set VMID of the bound space for this IOMMU. Must happen before configuring
+  // the Dmar_space on the IOMMU, to ensure that TLB flushes from other cores
+  // see the correct VMID!
+  if (_space_id)
+    _space_id->vmid(_mmu->idx(), vmid());
+
+  // TLBs have to be invalidated before context bank is enabled
+  _mmu->tlb_invalidate_vmid(vmid());
+
+  // Configure VMID and context bank type.
+  Cbar cbar;
+  cbar.vmid() = vmid();
+  cbar.type() = CBAR_TYPE_STAGE_2;
+  if (Iommu::Log_faults)
+    cbar.irptndx() = _irptndx;
+  write_reg(cbar);
+
+  Cb_tcr tcr;
+  // Configure shareability and cacheability for memory associated with
+  // the IOMMU page tables, according to the IOMMU's support for coherent
+  // page table walks.
+  if constexpr (Iommu::Coherent)
+    {
+      tcr.sh0() = TCR_SH_IS;
+      tcr.irgn0() = TCR_RGN_WBWA;
+      tcr.orgn0() = TCR_RGN_WBWA;
+    }
+  else
+    {
+      tcr.sh0() = TCR_SH_OS;
+      tcr.irgn0() = TCR_RGN_NC;
+      tcr.orgn0() = TCR_RGN_NC;
+    }
+
+  if constexpr (Va64_support)
+    {
+      tcr.pasize() = address_size_encode(_mmu->_oas);
+      // First page table is concatenated (10-bits), we skip level zero.
+      tcr.sl0() = TCR_64_SL0_LVL1_START;
+      // Region size is 2^(64 - T0SZ) -> T0SZ = 64 - input_address_size
+      tcr.t0sz() = 64 - _mmu->_ias;
+
+      // Enable AArch64 translation scheme
+      Cba2r cba2r;
+      cba2r.va64() = CBA2R_VA64;
+      write_reg(cba2r);
+    }
+  else
+    {
+      // We start at first level (AArch32 page tables have no level zero).
+      tcr.sl0() = TCR_SL0_LVL1_START;
+      // Region size is 2^(32 - T0SZ) -> T0SZ = 32 - input_address_size
+      tcr.t0sz() = 32 - _mmu->_ias;
+    }
+
+  write_reg(tcr);
+  write_reg<Cb_ttbr0, Reg_access::Non_atomic>(pt_phys);
+
+  // Enable context bank
+  Cb_sctlr sctlr;
+  sctlr.m() = 1;
+  // Return an abort to the device if a context fault occurs.
+  sctlr.cfre() = 1;
+  sctlr.cfie() = Iommu::Log_faults;
+  // Process transactions independently of any outstanding context fault.
+  sctlr.hupcf() = 1;
+  write_reg(sctlr);
+}
 
 PUBLIC
 int
