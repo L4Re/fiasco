@@ -104,8 +104,8 @@ public:
       Mem::dsb();
     }
 
-    // Use a separate VMID for each IOMMU, has the advantage that we only flush
-    // on IOMMUs where the page table is really bound.
+    // Use a separate VMID for each IOMMU. This has the advantage that we only
+    // flush on IOMMUs where the page table is really bound.
     Vmid _vmids[Max_iommus];
     static_assert(sizeof(Iommu::Vmid) >= sizeof(Unsigned32),
                   "Memory accesses to VMIDs must be atomic, "
@@ -466,14 +466,14 @@ private:
           // Region size is 2^(64 - T0SZ) -> T0SZ = 64 - input_address_size
           tcr.t0sz() = 64 - _mmu->_ias;
 
-          // Enable Aarch64 translation scheme
+          // Enable AArch64 translation scheme
           Cba2r cba2r;
           cba2r.va64() = CBA2R_VA64;
           write_reg(cba2r);
         }
       else
         {
-          // We start at first level (Aarch32 page tables have no level zero).
+          // We start at first level (AArch32 page tables have no level zero).
           tcr.sl0() = TCR_SL0_LVL1_START;
           // Region size is 2^(32 - T0SZ) -> T0SZ = 32 - input_address_size
           tcr.t0sz() = 32 - _mmu->_ias;
@@ -658,7 +658,7 @@ private:
   {
     write_reg<Tlbgsync>(0);
 
-    // XXX do not loop foreveer
+    // XXX do not loop forever
     while (read_reg<Tlbgstatus>().gsactive())
       ;
   }

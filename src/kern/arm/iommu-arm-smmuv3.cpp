@@ -1804,7 +1804,7 @@ Iommu::setup(void *base_addr, unsigned eventq_irq, unsigned gerror_irq)
          Iommu::Coherent ? "" : "non-", idr0.cohacc() ? "" : "un");
 
   if (idr0.ttf() != Idr0::Ttf_aarch64 && idr0.ttf() != Idr0::Ttf_aarch32_aarch64)
-    panic("IOMMU: Aarch64 page table format not supported.");
+    panic("IOMMU: AArch64 page table format not supported.");
 
   if (idr0.stall_model() == Idr0::Stall_model_forced)
     panic("IOMMU: Stall model that forces faults to stall is not supported.");
@@ -2197,7 +2197,7 @@ Iommu_domain::get_or_init_cd(unsigned ias, unsigned virt_addr_size, Address pt_p
   _cd.affd() = 1; // An Access flag fault never occurs.
   _cd.wxn() = 0;
   _cd.uwxn() = 0;
-  _cd.aa64() = 1; // Use Aarch64 format
+  _cd.aa64() = 1; // Use AArch64 format
   _cd.hd() = 0; // Disable hardware update of Dirty flags
   _cd.ha() = 0; // Disable hardware update of Access flags
   // Fault behavior
@@ -2329,7 +2329,7 @@ Iommu::prepare_ste(Ste_ptr ste_ptr, Iommu_domain &domain, Address pt_phys_addr,
   ste.s2_sh0() = Cr1::Share_is;
   ste.s2_tg() = 0; // 4k
   ste.s2_ps() = address_size_encode(_oas);
-  ste.s2_aa64() = 1; // Use Aarch64 format
+  ste.s2_aa64() = 1; // Use AArch64 format
   ste.s2_affd() = 1; // An Access flag fault never occurs.
   ste.s2_s() = 0; // Do not stall faulting transactions.
   ste.s2_r() = Iommu::Log_faults; // Record faults in event queue.
