@@ -72,8 +72,6 @@ public:
   static void tlb_invalidate_domain(Iommu_domain const &domain);
 
 private:
-  enum { Stage2 = TAG_ENABLED(arm_iommu_stage2) };
-
   friend class Iommu_domain;
 
   enum
@@ -1054,6 +1052,14 @@ private:
   /// ASID allocator shared between all SMMUs.
   static Static_object<Asid_alloc> _asid_alloc;
 
+  enum class Stage : Unsigned8
+  {
+    Unknown,
+    Stage1,
+    Stage2,
+  };
+  static Stage _stage;
+
 public:
   Iommu_smmu_v3() = default;
 
@@ -1065,6 +1071,11 @@ public:
    * \param gerror_irq  Global error interrupt. (optional, 0 = disabled)
    */
   void setup(void *base_addr, unsigned eventq_irq, unsigned gerror_irq);
+
+  static bool stage2()
+  {
+    return _stage == Stage::Stage2;
+  }
 
 private:
   static unsigned init_platform_acpi();
@@ -1134,6 +1145,12 @@ private:
   /// Address space identifier of this domain. Allocated when the domain is
   /// bound for the first time, freed only on destruction.
   Iommu_smmu_v3::Asid _asid = Iommu_smmu_v3::Invalid_asid;
+
+  /// Context descriptor, used for all bindings of this domain (across SMMUs
+  /// and across stream IDs). Initialized when the domain is bound for the first
+  /// time. The context descriptor is only required if the SMMU does not
+  /// support stage 2 translation.
+  Iommu_smmu_v3::Cd _cd;
 
   /**
    * Track on which SMMUs the domain was bound for how many stream IDs.
@@ -1210,24 +1227,13 @@ Iommu_domain::del_binding(Iommu const *iommu)
     }
 }
 
-// -----------------------------------------------------------
-IMPLEMENTATION [iommu_arm_smmu_v3 && !arm_iommu_stage2]:
-
-EXTENSION class Iommu_domain
-{
-private:
-  /// Context descriptor, used for all bindings of this domain (across SMMUs
-  /// and across stream IDs). Initialized when the domain is bound for the first
-  /// time. The context descriptor is only required if the SMMU does not
-  /// support stage 2 translation.
-  Iommu_smmu_v3::Cd _cd;
-};
-
 PRIVATE
 Iommu_smmu_v3::Cd const *
 Iommu_domain::get_or_init_cd(unsigned ias, unsigned virt_addr_size,
                              Address pt_phys_addr)
 {
+  assert(!Iommu_smmu_v3::stage2());
+
   auto g = lock_guard(_lock);
 
   // Already initialized?
@@ -1285,12 +1291,10 @@ PRIVATE
 Iommu_smmu_v3::Cd const *
 Iommu_domain::get_cd_addr() const && = delete;
 
-// ------------------------------------------------------------------
-IMPLEMENTATION [iommu_arm_smmu_v3]:
-
 #include "feature.h"
 
 Static_object<Iommu_smmu_v3::Asid_alloc> Iommu_smmu_v3::_asid_alloc;
+Iommu_smmu_v3::Stage Iommu_smmu_v3::_stage;
 
 KIP_KERNEL_FEATURE("arm,smmu-v3");
 
@@ -1630,7 +1634,7 @@ Iommu_smmu_v3::release_ste(Ste_ptr ste)
   assert(!ste->v());
 
   // Erase TTB or S1ContextPtr.
-  if constexpr (Stage2)
+  if (stage2())
     ste->s2_ttb() = 0;
   else
     ste->s1_context_ptr() = 0;
@@ -1985,20 +1989,26 @@ Iommu_smmu_v3::setup(void *base_addr, unsigned eventq_irq, unsigned gerror_irq)
              idr5.oas().get(), idr5.gran4k().get(), idr5.vax().get());
     }
 
-  if constexpr (Stage2)
+  bool supports_stage1 = idr0.s1p();
+  bool supports_stage2 = idr0.s2p();
+  if (_stage == Stage::Unknown)
     {
-      if (!idr0.s2p())
-        panic("IOMMU: SMMU does not support stage 2 translation.");
-
-      _num_asid_bits = idr0.vmid16() ? 16 : 8;
+      // Prefer Stage with a virtualization enabled kernel.
+      if constexpr (TAG_ENABLED(cpu_virt))
+        _stage = supports_stage2 ? Stage::Stage2 : Stage::Stage1;
+      else
+        _stage = supports_stage1 ? Stage::Stage1 : Stage::Stage2;
     }
+  else if (_stage == Stage::Stage1 && !supports_stage1)
+    panic("IOMMU: SMMU %u does not support stage 1 translation.", idx());
+  else if (_stage == Stage::Stage2 && !supports_stage2)
+    panic("IOMMU: SMMU %u does not support stage 1 translation.", idx());
+
+
+  if (stage2())
+    _num_asid_bits = idr0.vmid16() ? 16 : 8;
   else
-    {
-      if (!idr0.s1p())
-        panic("IOMMU: SMMU does not support stage 1 translation.");
-
-      _num_asid_bits = idr0.asid16() ? 16 : 8;
-    }
+    _num_asid_bits = idr0.asid16() ? 16 : 8;
 
   if (idr0.msi())
     {
@@ -2271,12 +2281,9 @@ Iommu_smmu_v3::deconfigure_ste(Ste_ptr ste, Unsigned32 stream_id,
   return -L4_err::EInval;
 }
 
-// -----------------------------------------------------------
-IMPLEMENTATION [iommu_arm_smmu_v3 && !arm_iommu_stage2]:
-
 PRIVATE
 void
-Iommu_smmu_v3::tlb_invalidate_asid(Asid asid)
+Iommu_smmu_v3::tlb_invalidate_asid_stage1(Asid asid)
 {
   // When domain is not bound it has the invalid ASID.
   if (asid != Invalid_asid)
@@ -2285,9 +2292,9 @@ Iommu_smmu_v3::tlb_invalidate_asid(Asid asid)
 
 PRIVATE
 bool
-Iommu_smmu_v3::prepare_ste(Ste_ptr ste_ptr, Iommu_domain &domain,
-                           Address pt_phys_addr, unsigned virt_addr_size,
-                           unsigned)
+Iommu_smmu_v3::prepare_ste_stage1(Ste_ptr ste_ptr, Iommu_domain &domain,
+                                  Address pt_phys_addr, unsigned virt_addr_size,
+                                  unsigned)
 {
   // Get or allocate context descriptor.
   Cd const *cd = domain.get_or_init_cd(_ias, virt_addr_size, pt_phys_addr);
@@ -2322,17 +2329,14 @@ Iommu_smmu_v3::prepare_ste(Ste_ptr ste_ptr, Iommu_domain &domain,
 
 PRIVATE inline
 bool
-Iommu_smmu_v3::is_domain_bound_to_ste(Ste_ptr ste, Iommu_domain const &domain,
-                                      Address) const
+Iommu_smmu_v3::is_domain_bound_to_ste_stage1(Ste_ptr ste, Iommu_domain const &domain,
+                                             Address) const
 {
   // If we do not own the STE, we cannot safely dereference the s1_context_ptr
   // field, so instead check if points to the domain's CD.
   // OPTIMIZE: Might be worth caching physical address of the CD?
   return ste->s1_context_ptr() == Mem_layout::pmem_to_phys(domain.get_cd_addr());
 }
-
-// -----------------------------------------------------------
-IMPLEMENTATION [iommu_arm_smmu_v3 && arm_iommu_stage2]:
 
 PUBLIC inline
 unsigned
@@ -2341,7 +2345,7 @@ Iommu_smmu_v3::ipa_size() const
 
 PRIVATE
 void
-Iommu_smmu_v3::tlb_invalidate_asid(Asid asid)
+Iommu_smmu_v3::tlb_invalidate_asid_stage2(Asid asid)
 {
   // When domain is not bound, it has the invalid ASID.
   if (asid != Invalid_asid)
@@ -2350,9 +2354,9 @@ Iommu_smmu_v3::tlb_invalidate_asid(Asid asid)
 
 PRIVATE
 bool
-Iommu_smmu_v3::prepare_ste(Ste_ptr ste_ptr, Iommu_domain &domain,
-                           Address pt_phys_addr, unsigned virt_addr_size,
-                           unsigned start_level)
+Iommu_smmu_v3::prepare_ste_stage2(Ste_ptr ste_ptr, Iommu_domain &domain,
+                                  Address pt_phys_addr, unsigned virt_addr_size,
+                                  unsigned start_level)
 {
   unsigned long vmid = domain.get_or_alloc_asid();
   if (vmid == Invalid_asid)
@@ -2390,11 +2394,46 @@ Iommu_smmu_v3::prepare_ste(Ste_ptr ste_ptr, Iommu_domain &domain,
 
 PRIVATE inline
 bool
-Iommu_smmu_v3::is_domain_bound_to_ste(Ste_ptr ste, Iommu_domain const &,
-                                      Address pt_phys_addr) const
+Iommu_smmu_v3::is_domain_bound_to_ste_stage2(Ste_ptr ste, Iommu_domain const &,
+                                             Address pt_phys_addr) const
 {
   // Stream table entry refers to the domain's page table.
   return ste->s2_ttb() == pt_phys_addr;
+}
+
+PRIVATE
+void
+Iommu_smmu_v3::tlb_invalidate_asid(Asid asid)
+{
+  if (stage2())
+    tlb_invalidate_asid_stage2(asid);
+  else
+    tlb_invalidate_asid_stage1(asid);
+}
+
+PRIVATE
+bool
+Iommu_smmu_v3::prepare_ste(Ste_ptr ste_ptr, Iommu_domain &domain,
+                           Address pt_phys_addr, unsigned virt_addr_size,
+                           unsigned start_level)
+{
+  if (stage2())
+    return prepare_ste_stage2(ste_ptr, domain, pt_phys_addr, virt_addr_size,
+                              start_level);
+  else
+    return prepare_ste_stage1(ste_ptr, domain, pt_phys_addr, virt_addr_size,
+                              start_level);
+}
+
+PRIVATE inline
+bool
+Iommu_smmu_v3::is_domain_bound_to_ste(Ste_ptr ste, Iommu_domain const &domain,
+                                      Address pt_phys_addr) const
+{
+  if (stage2())
+    return is_domain_bound_to_ste_stage2(ste, domain, pt_phys_addr);
+  else
+    return is_domain_bound_to_ste_stage1(ste, domain, pt_phys_addr);
 }
 
 // ------------------------------------------------------------------
