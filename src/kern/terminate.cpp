@@ -9,10 +9,11 @@ IMPLEMENTATION:
 
 #include <cstdio>
 #include <cstdlib>
+#include "global_data.h"
 #include "helping_lock.h"
 #include "kernel_console.h"
+#include "processor.h"
 #include "reset.h"
-#include "global_data.h"
 #include "static_init.h"
 
 /**
@@ -25,6 +26,11 @@ raw_exit()
   // make sure that we don't acknowledge the exit question automatically
   Kconsole::console()->change_state(Console::PUSH, 0,
                                     ~Console::INENABLED, 0);
+  // We need to disable the UART receive interrupt to prevent the interrupt
+  // handler from "stealing" the input. But actually disable all interrupts,
+  // including the timer interrupt. We reboot anyway.
+  Proc::cli();
+
   puts("\nPress any key to reboot.");
   Kconsole::console()->getchar();
   puts("\033[1mRebooting.\033[m");
@@ -78,6 +84,11 @@ PUBLIC static [[noreturn]]
 void
 Exit_question::ask()
 {
+  // We need to disable the UART receive interrupt to prevent the interrupt
+  // handler from "stealing" the input. But actually disable all interrupts,
+  // including the timer interrupt. We reboot anyway.
+  Proc::cli();
+
   while (1)
     {
       puts("\nReturn reboots, \"k\" enters L4 kernel debugger...");
