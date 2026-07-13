@@ -23,7 +23,7 @@ public:
   unsigned idx() const
   { return this - _iommus.begin(); }
 
-  enum { Coherent = TAG_ENABLED(arm_iommu_coherent) };
+  static constexpr bool Coherent = TAG_ENABLED(arm_iommu_coherent);
 
 private:
   /// Platform specific IOMMU initialization.
