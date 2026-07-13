@@ -28,6 +28,12 @@ public:
     Reserved_mmio   = 2,
   };
 
+  enum Ext_type_arch
+  {
+    Arch_acpi_tables = 3,
+    Arch_acpi_nvs = 4,
+  };
+
 private:
   Mword _l, _h;
 };
