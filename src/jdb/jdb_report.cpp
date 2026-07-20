@@ -110,6 +110,22 @@ Jdb_report::action(int cmd, void *&, char const *&, int &) override
           Jdb::execute_command_long(b.c_str());
         }
     }
+
+  delim("UTCBs/vCPU states:");
+  Jdb_screen::set_width(80);
+  for (auto const &&l: Kobject_dbg::_kobjects)
+    {
+      Thread *t = cxx::dyn_cast<Thread *>(Kobject::from_dbg(l));
+      if (t && t->space() != Kernel_task::kernel_task())
+        {
+          String_buf<16> b;
+          b.printf("z %lx", t->dbg_id());
+          delim();
+          printf("thread: %lx\n", t->dbg_id());
+          Jdb::execute_command_long(b.c_str());
+        }
+    }
+
   delim("Done");
 
   if (gzip)
