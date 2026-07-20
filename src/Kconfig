@@ -155,7 +155,8 @@ config AMP
 config MP_MAX_CPUS
 	int "Maximal supported number of CPUs"
 	depends on MP || AMP
-	range 1 8192 if MP
+	range 1 16 if MP && RISCV
+	range 1 8192 if MP && !RISCV
 	default 16 if MP
 	range 1 16 if AMP
 	default 4 if AMP
