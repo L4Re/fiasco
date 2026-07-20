@@ -170,13 +170,15 @@ Cpu::init_supervisor_mode(bool is_boot_cpu)
   if (!is_boot_cpu)
     return;
 
-  extern char ivt_start; // physical address!
+  extern char ivt_start_virt_offs;
 
   // map the interrupt vector table to 0xffff0000
   auto pte = Kmem::kdir->walk(Virt_addr(Kmem_space::Ivt_base),
                               Kpdir::Depth, true,
                               Kmem_alloc::q_allocator(Ram_quota::root.unwrap()));
-  pte.set_page(Phys_mem_addr(reinterpret_cast<Address>(&ivt_start)),
+  Address ivt = reinterpret_cast<Address>(&ivt_start_virt_offs);
+  Phys_mem_addr ivt_phys = Phys_mem_addr(Kmem::kdir->virt_to_phys(ivt));
+  pte.set_page(Phys_mem_addr(ivt_phys),
                Page::Attr::kern_global(Page::Rights::RWX()));
   pte.write_back_if(true);
   Mem_unit::tlb_flush_kernel(Kmem_space::Ivt_base);

@@ -283,14 +283,15 @@ SECTIONS {
   __end_of_the_kernel = .;
 
 #if defined NEED_EXCPT
-  ivt_start = ALIGN(. - phys_offset, 4K);
-  .excp 0xffff0000 : AT (ivt_start) {
+  ivt_start_virt_offs = ALIGN(., 4K);
+  ivt_start_phys = ALIGN(. - phys_offset, 4K);
+  .excp 0xffff0000 : AT (ivt_start_phys) {
     KEEP (*(.vect)) *(.excp.text)
     *(.vect.extra)
     . = ALIGN(4K);
   } :excpt
 
-  . = ivt_start + phys_offset + SIZEOF(.excp);
+  . = ivt_start_phys + phys_offset + SIZEOF(.excp);
 #endif
 
   PROVIDE( _end = . );
