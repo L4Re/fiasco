@@ -82,8 +82,6 @@ Thread::Thread(Ram_quota *q)
   r->status = Cpu::Sstatus_user_default;
   r->init_hstatus();
 
-  alloc_eager_fpu_state();
-
   state_add_dirty(Thread_dead, false);
 
   // ok, we're ready to go!

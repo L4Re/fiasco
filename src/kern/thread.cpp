@@ -379,15 +379,13 @@ Thread::Thread(Ram_quota *q, Context_mode_kernel)
   if constexpr (Config::Stack_depth)
     std::memset(reinterpret_cast<char*>(this) + sizeof(Thread), '5',
                 Thread::Size-sizeof(Thread) - 64);
-
-  alloc_eager_fpu_state();
 }
 
 PUBLIC inline
 bool
 Thread::initialize()
 {
-  return true;
+  return alloc_eager_fpu_state();
 }
 
 /** Destructor.  Reestablish the Context constructor's precondition.
@@ -929,7 +927,7 @@ Thread::switchin_fpu(bool alloc_new_fpu = true)
   return 1;
 }
 
-PUBLIC inline
+PUBLIC [[nodiscard]] inline
 bool
 Thread::alloc_eager_fpu_state()
 { return true; }
@@ -997,7 +995,7 @@ Thread::switchin_fpu(bool /* alloc_new_fpu */ = true)
   panic("must not see any FPU trap with eager FPU\n");
 }
 
-PUBLIC inline NEEDS["fpu.h", "fpu_alloc.h"]
+PUBLIC [[nodiscard]] inline NEEDS["fpu.h", "fpu_alloc.h"]
 bool
 Thread::alloc_eager_fpu_state()
 {
