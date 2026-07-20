@@ -17,6 +17,7 @@
 
 config PF_ARM_GEN_SELECT_SUPPORT
 	bool "Generic platform: Select specific support"
+	depends on EXPERT
 	help
 	  Configure specific hardware support for the generic platform.
 	  On default, all support is available.
