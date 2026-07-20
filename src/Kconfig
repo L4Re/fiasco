@@ -157,7 +157,8 @@ config MP_MAX_CPUS
 	depends on MP || AMP
 	range 1 16 if MP && RISCV
 	range 1 8192 if MP && !RISCV
-	default 16 if MP
+	default 16 if MP && RISCV
+	default 32 if MP && !RISCV
 	range 1 16 if AMP
 	default 4 if AMP
 	help
