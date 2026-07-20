@@ -90,19 +90,49 @@ bool
 Thread_object::put() override
 { return dec_ref() == 0; }
 
-PUBLIC inline
+PRIVATE static inline
 void *
-Thread_object::operator new(size_t, Ram_quota *q) noexcept
+Thread_object::alloc(Ram_quota *q) noexcept
 {
   static_assert(sizeof(Thread_object) <= Thread::Size);
 
   void *t = Kmem_alloc::allocator()->q_alloc(q, Bytes(Thread::Size));
-  if (t)
+  if (t) [[likely]]
     memset(t, 0, sizeof(Thread_object));
 
   // separate_lifetime() is required to convince the compiler that this new
   // operator does more than allocating memory.
   return separate_lifetime(t);
+}
+
+PUBLIC template<typename THREAD_TYPE = Thread_object>
+static inline NEEDS[Thread_object::alloc]
+THREAD_TYPE *
+Thread_object::create(Ram_quota *q) noexcept
+{
+  void *mem = Thread_object::alloc(q);
+  if (!mem) [[unlikely]]
+    return nullptr;
+
+  THREAD_TYPE *t = new (mem) THREAD_TYPE(q);
+  if (!t->initialize()) [[unlikely]]
+    {
+      delete t;
+      return nullptr;
+    }
+
+  return t;
+}
+
+PUBLIC template<typename T> static inline
+void *
+Thread_object::operator new(size_t, T &&p) noexcept
+{
+  static_assert(
+    cxx::is_same_v<cxx::remove_reference_t<T>, void *>,
+    "Ram_quota placement new was replaced with Thread_object::create");
+
+  return p;
 }
 
 PUBLIC
@@ -771,7 +801,7 @@ thread_factory(Ram_quota *q, Space *,
                int *err, unsigned *)
 {
   *err = L4_err::ENomem;
-  return new (q) Thread_object(q);
+  return Thread_object::create(q);
 }
 
 static inline

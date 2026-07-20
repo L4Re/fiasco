@@ -76,7 +76,7 @@ PUBLIC static
 Kernel_thread *
 Kernel_thread::create_for_boot_cpu()
 {
-  Kernel_thread *kernel = new (Ram_quota::root) Kernel_thread(Ram_quota::root);
+  Kernel_thread *kernel = Thread_object::create<Kernel_thread>(Ram_quota::root);
   assert_opt(kernel);
   Task *const ktask = Kernel_task::kernel_task();
   kernel->kbind(ktask);

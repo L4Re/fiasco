@@ -155,8 +155,6 @@ private:
     Mword _state;
   };
 
-  void *operator new(size_t) = delete; ///< Default new operator undefined
-
   bool handle_sigma0_page_fault (Address pfa);
 
   /**
@@ -385,6 +383,12 @@ Thread::Thread(Ram_quota *q, Context_mode_kernel)
   alloc_eager_fpu_state();
 }
 
+PUBLIC inline
+bool
+Thread::initialize()
+{
+  return true;
+}
 
 /** Destructor.  Reestablish the Context constructor's precondition.
     @pre state() == Thread_dead

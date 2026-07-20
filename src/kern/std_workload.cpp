@@ -84,7 +84,7 @@ Thread_object *
 create_user_thread(Task *task, Thread_ptr const &pager, Address ip,
                    Kobjects_list &reap_list)
 {
-  Thread_object *thread = new (Ram_quota::root) Thread_object(Ram_quota::root);
+  Thread_object *thread = Thread_object::create(Ram_quota::root);
   assert_opt(thread);
   // prevent deletion of this thing
   thread->inc_ref();

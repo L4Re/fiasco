@@ -1204,7 +1204,7 @@ Utest::start_thread(F const &fn, Cpu_number cpu,
 {
   Thread_object *t = thr;
   if (!t)
-    t = new (Ram_quota::root) Thread_object(Ram_quota::root);
+    t = Thread_object::create(Ram_quota::root);
   if (!t)
     return false;
 
@@ -1518,7 +1518,7 @@ init_unittest_threaded()
     init_unittest_exclusive();
   else if (init_unittest)
     {
-      Thread_object *t = new (Ram_quota::root) Thread_object(Ram_quota::root);
+      Thread_object *t = Thread_object::create(Ram_quota::root);
       Utest_fw::chk(t, "Create thread for executing the kunit tests");
 
       // Keep reference until thread has terminated.
