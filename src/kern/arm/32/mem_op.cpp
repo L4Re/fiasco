@@ -40,7 +40,7 @@ PRIVATE static inline void
 Mem_op::__arm_kmem_cache_maint(Op_cache op, void const *kstart, void const *kend)
 {
   Address kstart_addr = reinterpret_cast<Address>(kstart);
-  Address kend_addr = reinterpret_cast<Address>(kstart);
+  Address kend_addr = reinterpret_cast<Address>(kend);
   switch (op)
     {
     case Op_cache::Clean_data:
