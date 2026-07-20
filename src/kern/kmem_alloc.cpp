@@ -441,8 +441,6 @@ Kmem_alloc::create_free_map(Kip const *kip, Mem_region_map_base *map,
       unsigned long s = md.start();
       unsigned long e = md.end();
 
-      // Sweep out stupid descriptors (that have the end before the start)
-
       switch (md.type())
         {
         case Mem_desc::Conventional:
