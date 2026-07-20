@@ -34,8 +34,10 @@ bool         Jdb_screen::_direct_enabled = true;
 const char *Jdb_screen::Mword_adapter    = "~~~~~~~~~~~~~~~~";
 const char *Jdb_screen::Mword_not_mapped = "----------------";
 const char *Jdb_screen::Mword_blank      = "                ";
-const char *Jdb_screen::Line             = "------------------------------------"
-                                           "-----------------------------------";
+const char *Jdb_screen::Line             = "--------------------"
+                                           "--------------------"
+                                           "--------------------"
+                                           "--------------------";
 
 PUBLIC static
 void
