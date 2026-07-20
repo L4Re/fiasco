@@ -37,3 +37,10 @@ void Uart_16550_dw::irq_ack()
 #endif // !UART_WITHOUT_INPUT
 
 } // namespace L4
+
+static l4re_device_spec_dt_ids dt_ids[] = {
+  { .compatible = "snps,dw-apb-uart" },
+  {},
+};
+
+l4re_register_device_uart_dt(L4::Uart_16550_dw, uart16550dw, dt_ids);
