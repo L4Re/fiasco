@@ -36,6 +36,7 @@ namespace L4_kernel_options
 
     F_oneshot_timer     = 1 << 25,
     F_perf_profile      = 1 << 26,
+    F_kmem_descs        = 1 << 27,
   };
 
   enum

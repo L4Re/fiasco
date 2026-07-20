@@ -85,6 +85,8 @@ public:
 
   static Cpu_number max_num_cpus() { return Cpu_number(Max_num_cpus); }
 
+  static Global_data<bool> kmem_descs;
+
   static Global_data<bool> esc_hack;
   static Global_data<unsigned> tbuf_entries;
 
@@ -237,6 +239,7 @@ IMPLEMENTATION:
 KIP_KERNEL_ABI_VERSION(FIASCO_STRINGIFY(FIASCO_KERNEL_SUBVERSION));
 
 // class variables
+DEFINE_GLOBAL Global_data<bool> Config::kmem_descs;
 DEFINE_GLOBAL Global_data<bool> Config::esc_hack;
 #ifdef CONFIG_SERIAL
 DEFINE_GLOBAL_CONSTINIT
@@ -284,6 +287,9 @@ Config::init()
           serial_esc = true;
     }
 #endif
+
+  if (Koptions::o()->opt(Koptions::F_kmem_descs))
+    kmem_descs = true;
 }
 
 PUBLIC static

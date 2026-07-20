@@ -415,13 +415,15 @@ Kmem_alloc::validate_free_region(Kip const *, unsigned long *, unsigned long *)
 /**
  * Create map entries for all regions which could be used for kernel memory.
  *
- * This is actually the difference quantity of the conventional memory and all
- * unusable memory regions.
+ * This is actually the difference quantity of memory used for kernel memory --
+ * either Mem_desc::Conventional (Config::kmem_descs=false) or Mem_desc::Kmem
+ * (Config::kmem_descs=true) and -- all unusable memory regions.
  *
  * \param kip        The KIP.
- * \param[out] map   The map containing the difference quantity of conventional
- *                   memory and unusable memory regions.
+ * \param[out] map   The map containing the difference quantity of RAM to be
+ *                   used for kernel memory and unusable memory regions.
  * \param alignment  The required kernel memory alignment.
+ *
  * \returns  The amount of detected conventional memory in bytes. The amount of
  *           actually usable memory is smaller if any unusable region overlaps
  *           conventional memory.
@@ -443,6 +445,10 @@ Kmem_alloc::create_free_map(Kip const *kip, Mem_region_map_base *map,
 
       switch (md.type())
         {
+        case Mem_desc::Kmem:
+          if (!Config::kmem_descs)
+            break;
+          [[fallthrough]];
         case Mem_desc::Conventional:
           s = (s + alignment - 1) & ~(alignment - 1);
           e = ((e + 1) & ~(alignment - 1)) - 1;
@@ -450,7 +456,12 @@ Kmem_alloc::create_free_map(Kip const *kip, Mem_region_map_base *map,
             break;
           if (!validate_free_region(kip, &s, &e))
             break;
-          available_size += e - s + 1;
+          if (md.type() == Mem_desc::Conventional)
+            {
+              available_size += e - s + 1;
+              if (Config::kmem_descs)
+                break;
+            }
           if (!map->add(Mem_region(s, e)))
             panic("Kmem_alloc::create_free_map(): memory map too small");
           break;
@@ -530,6 +541,10 @@ Kmem_alloc::setup_kmem_from_kip_md_tmp(unsigned long freemap_size,
       if constexpr (DebugKmemSetup)
         printf("  Kmem_alloc: block %014lx(%014lx) size=%lx\n",
                kern, start, size);
+      else if (Config::kmem_descs)
+        printf("  Reserved %lu %ciB at phys %014lx-%014lx\n",
+               md.size() >> 20 ?: md.size() >> 10, md.size() >> 20 ? 'M' : 'K',
+               md.start(), md.end());
 
       a->add_mem(reinterpret_cast<void *>(kern), size);
       md.type(Mem_desc::Reserved);

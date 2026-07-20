@@ -12,6 +12,8 @@ public:
     Reserved     = 0x2,
     Dedicated    = 0x3,
     Shared       = 0x4,
+    Kmem         = 0x5,
+
     Kernel_tmp   = 0x7,
 
     Info         = 0xd,
