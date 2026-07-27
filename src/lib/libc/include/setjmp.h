@@ -17,19 +17,8 @@ typedef struct __jmp_buf_tag {
 
 #define __setjmp_attr __attribute__((__returns_twice__))
 
-#if defined(_POSIX_SOURCE) || defined(_POSIX_C_SOURCE) \
- || defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE) \
- || defined(_BSD_SOURCE)
-typedef jmp_buf sigjmp_buf;
-int sigsetjmp (sigjmp_buf, int) __setjmp_attr;
-_Noreturn void siglongjmp (sigjmp_buf, int);
-#endif
-
-#if defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE) \
- || defined(_BSD_SOURCE)
 int _setjmp (jmp_buf) __setjmp_attr;
 _Noreturn void _longjmp (jmp_buf, int);
-#endif
 
 int setjmp (jmp_buf) __setjmp_attr;
 _Noreturn void longjmp (jmp_buf, int);

@@ -47,35 +47,12 @@ size_t strlen (const char *);
 
 char *strerror (int);
 
-#if defined(_POSIX_SOURCE) || defined(_POSIX_C_SOURCE) \
- || defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE) \
- || defined(_BSD_SOURCE)
-char *strtok_r (char *__restrict, const char *__restrict, char **__restrict);
-int strerror_r (int, char *, size_t);
 char *stpcpy(char *__restrict, const char *__restrict);
 char *stpncpy(char *__restrict, const char *__restrict, size_t);
 size_t strnlen (const char *, size_t);
-char *strdup (const char *);
-char *strndup (const char *, size_t);
-char *strsignal(int);
-void *memmem(const void *, size_t, const void *, size_t);
-#endif
 
-#if defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
-char *strsep(char **, const char *);
-size_t strlcat (char *, const char *, size_t);
-size_t strlcpy (char *, const char *, size_t);
-void explicit_bzero (void *, size_t);
-#endif
-
-#ifdef _GNU_SOURCE
-#define	strdupa(x)	strcpy(alloca(strlen(x)+1),x)
-int strverscmp (const char *, const char *);
 char *strchrnul(const char *, int);
-char *strcasestr(const char *, const char *);
 void *memrchr(const void *, int, size_t);
-void *mempcpy(void *, const void *, size_t);
-#endif
 
 #ifdef __cplusplus
 }
