@@ -274,7 +274,7 @@ requires(cxx::is_same_v<SPACE, Obj_space>)
 }
 
 template< typename SIZE_TYPE >
-static typename SIZE_TYPE::Order_type
+typename SIZE_TYPE::Order_type
 get_order_from_fp(L4_fpage const &fp, int base_order = 0)
 {
   using Value = SIZE_TYPE::Value;
@@ -294,7 +294,7 @@ get_order_from_fp(L4_fpage const &fp, int base_order = 0)
 }
 
 template<typename Addr, typename Size>
-static inline
+inline
 void free_constraint(Addr &snd_addr, Size &snd_size,
                      Addr &rcv_addr, Size rcv_size,
                      Addr const &hot_spot)
