@@ -407,6 +407,7 @@ config ARM_SVE
 	bool "Scalable Vector Extension support"
 	depends on ARM_V8 && FPU && BIT64
 	depends on HAS_ARM_SVE
+	default y
 	help
 	  The ARM Scalable Vector Extension (SVE) extends the SIMD functionality
 	  of the AArch64 execution state with support for larger and flexible
