@@ -279,6 +279,9 @@ config ONE_SHOT_PARAM
 
 	  Default is periodic mode. Passing '-oneshot-timer' as command line
 	  parameter enables the one-shot mode.
+	  The performance overhead for enabling this option is negligible as
+	  the kernel code is patched during the boot process according to the
+	  selected mode.
 
 endchoice
 
