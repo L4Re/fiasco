@@ -376,7 +376,7 @@ struct Ia32_intel_microcode
         return false;
 
       Unsigned32 const *w = &hdr_version;
-      Unsigned32 const *e = w + (total_size() / 4);
+      Unsigned32 const *e = w + (total_size() / sizeof(Unsigned32));
       Unsigned32 cs = 0;
       for (; w < e; ++w)
         cs += w[0];
