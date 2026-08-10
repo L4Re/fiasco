@@ -35,7 +35,7 @@ public:
     Need_upgrade_tlb_flush = 1,
     Map_page_size = Config::PAGE_SIZE,
     Page_shift = Config::PAGE_SHIFT,
-    Whole_space = 32,
+    Whole_space = MWORD_BITS,
     Identity_map = 0,
   };
 
@@ -98,7 +98,7 @@ public:
     Need_upgrade_tlb_flush = 1,         ///< Need to reload MPU on remote CPUs
     Map_page_size = Config::PAGE_SIZE,
     Page_shift = Config::PAGE_SHIFT,
-    Whole_space = 32,
+    Whole_space = MWORD_BITS,
     Identity_map = 1,
   };
 
