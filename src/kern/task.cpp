@@ -288,6 +288,9 @@ Task::check_ku_area_size(L4_fpage *ku_area)
   if (ku_area->order() < Config::PAGE_SHIFT)
     return 0;
 
+  if (ku_area->order() >= sizeof(size_t) * 8)
+    return 0;
+
   size_t size = size_t{1U} << ku_area->order();
 
   if (ku_area->mem_address() > Virt_addr(max_usable_user_address() - size + 1))
