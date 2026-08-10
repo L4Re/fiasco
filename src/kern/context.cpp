@@ -1485,14 +1485,6 @@ Context::handle_drq()
       resched |= Reschedule::if_not_zero(st & Thread_need_resched);
     }
 
-  if (!drq_pending() && !eager_drq_pending()) [[likely]]
-    {
-      // Always clear Thread_drq_ready, even if no DRQ is pending, because it
-      // might still be set if a DRQ was aborted.
-      state_del_dirty(Thread_drq_ready);
-      return resched;
-    }
-
   Mem::barrier();
   // Handling eager DRQs here is necessary for certain edge cases, e.g.
   // migrations, where the _pending_rq of a thread is removed from the
@@ -1505,9 +1497,6 @@ Context::handle_drq()
     resched |= _drq_q.handle_requests();
 
   state_del_dirty(Thread_drq_ready);
-
-  //LOG_MSG_3VAL(this, "xdrq", state(), 0, cpu_lock.test());
-
   resched |= Reschedule::if_zero(state() & Thread_ready_mask);
   return resched;
 }
