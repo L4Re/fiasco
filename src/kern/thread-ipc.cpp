@@ -1111,10 +1111,19 @@ Thread::copy_utcb_to(L4_msg_tag tag, Thread* receiver,
     return copy_utcb_to_utcb(tag, this, receiver, rights);
 }
 
+/**
+ * Return destination task of an IPC map operation.
+ *
+ * \param rcv          Receiving thread.
+ * \param buf          Pointer to receive buffer item.
+ * \param[in,out] sfp  Send flexpage. The rights are diminished if destination
+ *                     task is different from the task of the receiving thread.
+ */
 PRIVATE static inline
 Task *
 Thread::transfer_msg_lookup_dst_tsk(Thread *rcv,
-                                    L4_buf_iter::Item const *const buf)
+                                    L4_buf_iter::Item const *const buf,
+                                    L4_fpage *sfp)
 {
   Task *rcv_tsk = nonull_static_cast<Task*>(rcv->space());
 
@@ -1133,9 +1142,12 @@ Thread::transfer_msg_lookup_dst_tsk(Thread *rcv,
     return nullptr;
 
   Task *dst_tsk = cxx::dyn_cast<Task*>(dst_cap.obj());
-  auto task_rights = L4_fpage::Rights(dst_cap.rights());
-  if (!dst_tsk || !(task_rights & L4_fpage::Rights::CW())) [[unlikely]]
+  L4_fpage::Rights dst_rights = L4_fpage::Rights(dst_cap.rights());
+  if (!dst_tsk || !(dst_rights & L4_fpage::Rights::CW())) [[unlikely]]
     return nullptr;
+
+  if (sfp->type() == L4_fpage::Obj)
+    sfp->mask_rights(dst_rights | L4_fpage::Rights::CRW() | L4_fpage::Rights::CD());
 
   return dst_tsk;
 }
@@ -1215,7 +1227,7 @@ Thread::transfer_msg_items(L4_msg_tag const &tag, Thread* snd, Utcb *snd_utcb,
             {
               // we need to do a real mapping
               L4_error err;
-              Ref_ptr<Task> dst_tsk(transfer_msg_lookup_dst_tsk(rcv, buf));
+              Ref_ptr<Task> dst_tsk(transfer_msg_lookup_dst_tsk(rcv, buf, &sfp));
               if (!dst_tsk) [[unlikely]]
                 {
                   snd->set_ipc_error(L4_error::Overflow, rcv);
