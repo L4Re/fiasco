@@ -272,8 +272,8 @@ _tramp_mp_virt:
 	add     x0, x0, :lo12:_tramp_mp_spinlock
 	// Copy of Spin_lock::lock_arch(), we have no stack yet, so we cannot call it.
 	// {
-	b 2f
 	prfm	pstl1strm, [x0]
+	b 2f
 1:	wfe
 2:	ldaxr	x1, [x0]
 	tst	x1, #2
