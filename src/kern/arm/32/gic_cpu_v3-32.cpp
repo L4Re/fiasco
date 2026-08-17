@@ -28,7 +28,7 @@ PUBLIC inline
 void
 Gic_cpu_v3::pmr(unsigned prio)
 {
-  asm volatile("mcr p15, 0, %0, c4, c6, 0" : : "r"(prio));
+  asm volatile("mcr p15, 0, %0, c4, c6, 0" : : "r"(prio)); // ICC_PMR
 }
 
 PUBLIC inline NEEDS[Gic_cpu_v3::_enable_sre_set]
@@ -86,6 +86,6 @@ PUBLIC inline
 void
 Gic_cpu_v3::softint(Unsigned64 sgi)
 {
-  asm volatile("mcrr p15, 0, %Q0, %R0, c12"
+  asm volatile("mcrr p15, 0, %Q0, %R0, c12" // ICC_SGI1R
                : : "r"(sgi));
 }
