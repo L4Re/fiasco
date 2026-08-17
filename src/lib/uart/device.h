@@ -54,7 +54,8 @@ l4re_dev_create_by_dt_compatible(const char *dt_compatible,
   extern l4re_device_type_base *__L4RE_DEVICE_BEGIN[];
   extern l4re_device_type_base *__L4RE_DEVICE_END[];
 
-  for (auto const *d = __L4RE_DEVICE_BEGIN; d < __L4RE_DEVICE_END; ++d)
+  for (auto const *d = __L4RE_DEVICE_BEGIN;
+       device == nullptr && d < __L4RE_DEVICE_END; ++d)
     {
       const l4re_device_ids *ids = (*d)->ids();
       if (ids->dt)
