@@ -256,6 +256,7 @@ refvar _tramp_mp_startup_mair1
 	// Always use the non-optimized variant of lock_arch(), which is also
 	// compatible with versions of the ARM architecture prior to ARMv8.
 	// {
+	pldw	[r0]
 1:	ldrex	r1, [r0]
 	tst	r1, #2
 	wfene

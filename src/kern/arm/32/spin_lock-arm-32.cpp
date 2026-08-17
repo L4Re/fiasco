@@ -19,6 +19,7 @@ Spin_lock<Lock_t>::lock_arch()
 
 #define LOCK_ARCH(z) \
   __asm__ __volatile__ ( \
+      "   pldw %[lock]                       \n" \
       "1: ldrex"#z"   %[d], %[lock]          \n" \
       "   tst     %[d], #2                   \n" /* Arch_lock == #2 */ \
       "   wfene                              \n" \
