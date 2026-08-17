@@ -40,10 +40,7 @@ public:
     Vendor_amd,
   };
 
-  enum
-  {
-    Ldt_entry_size = 8,
-  };
+  static constexpr unsigned Ldt_entry_size = 8;
 
   enum Local_features
   {
