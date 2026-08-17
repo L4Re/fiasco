@@ -120,7 +120,8 @@ Mem_op::__arm_mem_cache_maint(Op_cache op, void const *start, void const *end)
       Mem_space::Page_order phys_size;
       Mem_space::Phys_addr phys_addr;
       Page::Attr attrs;
-      bool mapped = (   c->mem_space()->v_lookup(Mem_space::Vaddr(v), &phys_addr, &phys_size, &attrs)
+      bool mapped = (c->mem_space()->v_lookup(Mem_space::Vaddr(v), &phys_addr,
+                                              &phys_size, &attrs)
                      && (attrs.rights & Page::Rights::U()));
 
       Virt_size sz = Virt_size(1) << phys_size;
@@ -136,9 +137,9 @@ Mem_op::__arm_mem_cache_maint(Op_cache op, void const *start, void const *end)
           __arm_kmem_cache_maint(op, static_cast<void *>(vstart),
                                  static_cast<void *>(vend));
         }
+
       v += sz;
     }
-
 }
 
 extern "C" void sys_arm_mem_op()
@@ -246,7 +247,6 @@ PRIVATE template<typename FUNC> static
 void
 Mem_op::outer_cache_op(Address start, Address end, FUNC &&f)
 {
-
   Virt_addr v = Virt_addr(start);
   Virt_addr e = Virt_addr(end);
 
@@ -257,7 +257,8 @@ Mem_op::outer_cache_op(Address start, Address end, FUNC &&f)
       Mem_space::Page_order phys_size;
       Mem_space::Phys_addr phys_addr;
       Page::Attr attrs;
-      bool mapped = (   c->mem_space()->v_lookup(Mem_space::Vaddr(v), &phys_addr, &phys_size, &attrs)
+      bool mapped = (c->mem_space()->v_lookup(Mem_space::Vaddr(v), &phys_addr,
+                                              &phys_size, &attrs)
                      && (attrs.rights & Page::Rights::U()));
 
       Virt_size sz = Virt_size(1) << phys_size;
@@ -272,8 +273,10 @@ Mem_op::outer_cache_op(Address start, Address end, FUNC &&f)
           Virt_addr vend = vstart + sz;
           f(cxx::int_value<Virt_addr>(vstart), cxx::int_value<Virt_addr>(vend), false);
         }
+
       v += sz;
     }
+
   Outer_cache::sync();
 }
 
