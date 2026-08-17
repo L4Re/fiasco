@@ -320,9 +320,13 @@ Vm_vmx_ept::v_insert(Mem_space::Phys_addr phys, Mem_space::Vaddr virt,
       && (i.level != level || Mem_space::Phys_addr(i.page_addr()) != phys)) [[unlikely]]
     return Mem_space::Insert_err_exists;
 
+  bool const valid = i.is_valid();
+  if (valid)
+    page_attribs.rights |= i.attribs().rights;
+
   auto entry = i.make_page(phys, page_attribs);
 
-  if (i.is_valid())
+  if (valid)
     {
       if (i.entry() == entry) [[unlikely]]
         return Mem_space::Insert_warn_exists;
