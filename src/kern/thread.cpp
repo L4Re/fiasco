@@ -1011,7 +1011,11 @@ PUBLIC inline NEEDS["fpu.h", "fpu_state_ptr.h"]
 void
 Thread::transfer_fpu(Thread *to) //, Trap_state *trap_state, Utcb *to_utcb)
 {
-  Fpu_alloc::ensure_compatible_state(to->_quota, to->fpu_state(), fpu_state());
+  if (!Fpu_alloc::ensure_compatible_state(to->_quota, to->fpu_state(),
+                                          fpu_state())) [[unlikely]]
+    // Receiver has incompatible FPU type and we failed to allocate a new state.
+    // Skip the FPU transfer, the receiver keeps its previous FPU state.
+    return;
 
   auto *curr = current();
   if (this == curr)

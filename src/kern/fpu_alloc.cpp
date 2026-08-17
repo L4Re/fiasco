@@ -36,7 +36,7 @@ Fpu_alloc::quota_offset(unsigned state_size)
 }
 
 PROTECTED static inline
-bool
+[[nodiscard]] bool
 Fpu_alloc::alloc_state(Ram_quota *q, Fpu_state_ptr &s,
                        Slab_cache *alloc, unsigned state_size)
 {
@@ -73,7 +73,7 @@ Fpu_alloc::init()
 {}
 
 PUBLIC static inline
-bool
+[[nodiscard]] bool
 Fpu_alloc::alloc_state(Ram_quota *q, Fpu_state_ptr &s)
 {
   if (!alloc_state(q, s, slab_alloc(), Fpu::state_size()))
@@ -91,10 +91,10 @@ Fpu_alloc::free_state(Fpu_state_ptr &s)
 }
 
 PUBLIC static inline
-void
+bool
 Fpu_alloc::ensure_compatible_state(Ram_quota *,
                                    Fpu_state_ptr &, Fpu_state_ptr const &)
-{}
+{ return true; }
 
 //------------------------------------------------------------------------
 IMPLEMENTATION [fpu_alloc_typed]:
@@ -123,13 +123,18 @@ Fpu_alloc::free_state(Fpu_state_ptr &s)
 }
 
 PUBLIC static inline
-void
+[[nodiscard]] bool
 Fpu_alloc::ensure_compatible_state(Ram_quota *q,
                                    Fpu_state_ptr &to, Fpu_state_ptr const &from)
 {
-  if (to.get()->type() != from.get()->type())
-  {
-    Fpu_alloc::free_state(to);
-    Fpu_alloc::alloc_state(q, to, from.get()->type());
-  }
+  if (to.get()->type() == from.get()->type())
+    return true;
+
+  Fpu_state_ptr n;
+  if (!alloc_state(q, n, from.get()->type()))
+    return false;
+
+  free_state(to);
+  to.set(n.get());
+  return true;
 }
