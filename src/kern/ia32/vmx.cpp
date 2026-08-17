@@ -187,6 +187,8 @@ public:
 
   Unsigned64 ept_vpid_cap;
 
+  bool has_ept_2m_pages() const { return ept_vpid_cap & (1 << 16); }
+  bool has_ept_1g_pages() const { return ept_vpid_cap & (1 << 17); }
   bool has_invept() const { return ept_vpid_cap & (1 << 20); }
   bool has_invept_single() const { return ept_vpid_cap & (1 << 25); }
   bool has_invept_global() const { return ept_vpid_cap & (1 << 26); }

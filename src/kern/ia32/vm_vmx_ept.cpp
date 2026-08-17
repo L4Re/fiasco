@@ -464,10 +464,15 @@ Vm_vmx_ept::init()
   Kobject_iface::set_factory(L4_msg_tag::Label_vm,
                              Task::generic_factory<Vm_vmx_ept>);
 
-  printf("VMX: init page sizes\n");
+  printf("VMX: init page sizes (2 MiB: %s, 1 GiB: %s)\n",
+         vmx.info.has_ept_2m_pages() ? "yes" : "no",
+         vmx.info.has_ept_1g_pages() ? "yes" : "no");
+
   add_page_size(Mem_space::Page_order(12));
-  add_page_size(Mem_space::Page_order(21));
-  add_page_size(Mem_space::Page_order(30));
+  if (vmx.info.has_ept_2m_pages())
+    add_page_size(Mem_space::Page_order(21));
+  if (vmx.info.has_ept_1g_pages())
+    add_page_size(Mem_space::Page_order(30));
 }
 
 PRIVATE inline NEEDS[Vm_vmx_ept::safe_host_segments,
