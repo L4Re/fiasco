@@ -104,3 +104,10 @@ int Uart_tegra_tcu::get_char(bool blocking) const
 #endif // !UART_WITHOUT_INPUT
 
 } // namespace L4
+
+static const l4re_device_spec_dt_ids dt_ids[] = {
+  { .compatible = "nvidia,tegra194-tcu" },
+  {},
+};
+
+l4re_register_device_uart_dt(L4::Uart_tegra_tcu, tegra_tcu, dt_ids);
