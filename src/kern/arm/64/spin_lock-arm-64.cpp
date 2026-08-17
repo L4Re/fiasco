@@ -15,22 +15,24 @@ IMPLEMENT template<typename Lock_t> inline NEEDS["processor.h"]
 void
 Spin_lock<Lock_t>::lock_arch()
 {
-  Lock_t dummy, tmp;
+  Lock_t reg;
+  Unsigned32 status;
 
 #define LOCK_ARCH(z,u) \
   __asm__ __volatile__ ( \
-      "   sevl                                      \n" \
-      "   prfm pstl1keep, %[lock]                   \n" \
-      "1: wfe                                       \n" \
-      "   ldaxr" #z "  %" #u "[d], %[lock]          \n" \
-      "   tst     %x[d], #2                         \n" /* Arch_lock == #2 */ \
-      "   bne 1b                                    \n" \
-      "   orr   %x[tmp], %x[d], #2                  \n" \
-      "   stxr" #z " %w[d], %" #u "[tmp], %[lock]   \n" \
-      "   cbnz  %w[d], 1b                           \n" \
-      : [d] "=&r" (dummy), [tmp] "=&r"(tmp), [lock] "+Q" (_lock) \
-      : : "cc", "memory" \
-      )
+      "   sevl                                       \n" \
+      "   prfm pstl1keep, %[lock]                    \n" \
+      "1: wfe                                        \n" \
+      "   ldaxr" #z "  %" #u "[r], %[lock]           \n" \
+      "   tst     %x[r], #2                          \n" /* Arch_lock == #2 */ \
+      "   bne 1b                                     \n" \
+      "   orr   %x[r], %x[r], #2                     \n" \
+      "   stxr" #z " %w[status], %" #u "[r], %[lock] \n" \
+      "   cbnz  %w[status], 1b                       \n" \
+      : [r] "=&r" (reg),                                 \
+        [status] "=&r"(status),                          \
+        [lock] "+Q" (_lock)                              \
+      : : "cc", "memory" )
 
   switch (sizeof(Lock_t))
     {
