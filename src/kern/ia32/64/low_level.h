@@ -261,7 +261,7 @@
 	mov	%cr2, %rbx
 	push	%rbx
 .else
-	sub	$8, %rsp // reserved
+	pushq	$0 // reserved
 .endif
 	push	%rbp
 	push	%rsi
@@ -296,9 +296,9 @@
 
 #define SAVE_ALL_SIZE (16*8)
 #define SAVE_ALL_OFFS_CR2 (11*8)
-.macro save_all_regs
+.macro save_all_regs save_cr2=0
 	push	%rax
-	SAVE_STATE 1
+	SAVE_STATE \save_cr2
 .endm
 
 .macro restore_all_regs

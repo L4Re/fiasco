@@ -189,9 +189,9 @@ GATE_ENTRY	0x0e, entry_vec0e_page_fault, (ACC_PL_K | ACC_INTR_GATE)
 .globl	entry_vec0e_page_fault
 entry_vec0e_page_fault:
 	cld
-	SWITCH_TO_KERNEL_CR3	1
+	SWITCH_TO_KERNEL_CR3 1
 	pushq	$0x0e /* Build full Trap_state. Return_frame + error already on stack */
-	save_all_regs
+	save_all_regs 1
 	IA32_IBRS
 
 	/*
