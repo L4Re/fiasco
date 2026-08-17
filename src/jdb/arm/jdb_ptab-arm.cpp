@@ -132,6 +132,22 @@ Jdb_ptab_pdir<T>::ap_char(T_pte_ptr const &entry) const
   return ch[(*entry.pte >> 6) & 3];
 }
 
+/**
+ * Whether the entry is executable at the privilege level it is meant for.
+ *
+ * Kernel mappings always have UXN set and user mappings always have PXN set,
+ * so only the execute-never bit of the level the mapping is intended for is
+ * meaningful (see Pte_long_attribs::_attribs()). AP[1] selects which one that
+ * is.
+ */
+PROTECTED inline template< typename T >
+bool
+Jdb_ptab_pdir<T>::is_executable(T_pte_ptr const &entry) const
+{
+  Unsigned64 xn = Page::XN | ((*entry.pte & 0x40) ? Page::UXN : Page::PXN);
+  return !(*entry.pte & xn);
+}
+
 // -----------------------------------------------------------------------
 IMPLEMENTATION [arm && arm_lpae && cpu_virt]:
 
@@ -140,6 +156,19 @@ char
 Jdb_ptab_pdir<T>::ap_char(T_pte_ptr const &entry) const
 {
   return ((*entry.pte >> 7) & 1) ? 'w' : 'r';
+}
+
+/**
+ * Whether the entry is executable.
+ *
+ * Both the EL2 translation regime used for Kpdir and the stage-2 page table
+ * used for Pdir know a single execute-never bit only.
+ */
+PROTECTED inline template< typename T >
+bool
+Jdb_ptab_pdir<T>::is_executable(T_pte_ptr const &entry) const
+{
+  return !(*entry.pte & (1ULL << 54));
 }
 
 // -----------------------------------------------------------------------
@@ -163,13 +192,6 @@ Jdb_ptab_pdir<T>::is_cached(T_pte_ptr const &entry) const
   return (*entry.pte & Cache_mask) == CACHEABLE;
 }
 
-PROTECTED inline template< typename T >
-bool
-Jdb_ptab_pdir<T>::is_executable(T_pte_ptr const &entry) const
-{
-  return !(*entry.pte & 0x0040000000000000);
-}
-
 PRIVATE template< typename T >
 void
 Jdb_ptab_pdir<T>::print_entry(T_pte_ptr const &entry) const
@@ -185,26 +207,17 @@ Jdb_ptab_pdir<T>::print_entry(T_pte_ptr const &entry) const
         }
 
       Address phys = entry_phys(entry);
-      unsigned t = (*entry.pte & 2) >> 1;
 
       char ps;
-      if (entry.level == 0)
-        switch (t)
-          {
-          case 0: ps = 'G'; break;
-          case 1: ps = 'P'; break;
-          }
-      else if (entry.level == 1)
-        switch (t)
-          {
-          case 0: ps = 'M'; break;
-          case 1: ps = 'P'; break;
-          }
+      if (!entry.is_leaf())
+        ps = 'P';
       else
-        switch (t)
+        switch (entry.page_order())
           {
-          case 0: ps = '?'; break;
-          case 1: ps = 'p'; break;
+          case 12: ps = 'p'; break;
+          case 21: ps = 'M'; break;
+          case 30: ps = 'G'; break;
+          default: ps = '?'; break;
           }
 
       printf("%13lx%s%c", phys >> Config::PAGE_SHIFT,
