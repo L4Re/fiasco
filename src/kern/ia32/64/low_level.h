@@ -106,6 +106,8 @@
 	mov	40(%rsp), %rsp				/* load user rsp */
 #ifdef CONFIG_KERNEL_ISOLATION
 	mov	%r15, %cr3
+        /* hide user page table physical address */
+	xor	%r15d, %r15d
 #endif
 	sysretq
 .endm
