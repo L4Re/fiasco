@@ -19,7 +19,7 @@ Spin_lock<Lock_t>::lock_arch()
 
 #define LOCK_ARCH(z,u) \
   __asm__ __volatile__ ( \
-      "   prfm pstl1strm, %[lock]                   \n" \
+      "   prfm pstl1keep, %[lock]                   \n" \
       "   b 2f                                      \n" \
       "1: wfe                                       \n" \
       "2: ldaxr" #z "  %" #u "[d], %[lock]          \n" \
