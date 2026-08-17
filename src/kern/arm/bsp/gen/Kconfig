@@ -98,3 +98,7 @@ config PF_ARM_GEN_SELECT_UART_MVEBU
 config PF_ARM_GEN_SELECT_UART_STM32
 	bool "Support UART stm32" if PF_ARM_GEN_SELECT_SUPPORT
 	default y
+
+config PF_ARM_GEN_SELECT_UART_TEGRA_TCU
+	bool "Support UART tegra-tcu" if PF_ARM_GEN_SELECT_SUPPORT
+	default y
