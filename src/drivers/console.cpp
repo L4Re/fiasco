@@ -116,7 +116,8 @@ DEFINE_GLOBAL Global_data<Console *> Console::stdout;
 DEFINE_GLOBAL Global_data<Console *> Console::stderr;
 DEFINE_GLOBAL Global_data<Console *> Console::stdin;
 
-IMPLEMENT Console::~Console()
+IMPLEMENT inline
+Console::~Console()
 {}
 
 /**

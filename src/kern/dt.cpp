@@ -567,7 +567,7 @@ protected:
 // ------------------------------------------------------------------------
 IMPLEMENTATION [!dt]:
 
-IMPLEMENT static
+IMPLEMENT static inline
 void
 Dt::init()
 {}

@@ -160,17 +160,17 @@ Timer::update_timer(Unsigned64)
 //----------------------------------------------------------------------------
 IMPLEMENTATION[jdb]:
 
-IMPLEMENT_DEFAULT
+IMPLEMENT_DEFAULT inline
 void
 Timer::switch_freq_jdb()
 {}
 
-IMPLEMENT_DEFAULT
+IMPLEMENT_DEFAULT inline
 void
 Timer::switch_freq_system()
 {}
 
-IMPLEMENT_DEFAULT
+IMPLEMENT_DEFAULT inline
 void
 Timer::next_interval()
 {}

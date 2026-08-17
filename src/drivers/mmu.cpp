@@ -106,27 +106,27 @@ IMPLEMENT inline
 void Mmu::flush_vcache(void const *, void const *)
 {}
 
-IMPLEMENT
+IMPLEMENT inline
 void Mmu::clean_vdcache(void const *, void const *)
 {}
 
-IMPLEMENT
+IMPLEMENT inline
 void Mmu::flush_vdcache(void const *, void const *)
 {}
 
-IMPLEMENT
+IMPLEMENT inline
 void Mmu::inv_vdcache(void const *, void const *)
 {}
 
-IMPLEMENT
+IMPLEMENT inline
 void Mmu::flush_vcache()
 {}
 
-IMPLEMENT
+IMPLEMENT inline
 void Mmu::clean_vdcache()
 {}
 
-IMPLEMENT
+IMPLEMENT inline
 void Mmu::flush_vdcache()
 {}
 

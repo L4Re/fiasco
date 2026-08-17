@@ -15,7 +15,7 @@ public:
 
 IMPLEMENTATION:
 
-IMPLEMENT_DEFAULT
+IMPLEMENT_DEFAULT inline
 void
 Kmem::kernel_remap()
 {}

@@ -147,7 +147,7 @@ Delay::udelay(unsigned us)
 // ------------------------------------------------------------------------
 IMPLEMENTATION [sync_clock]:
 
-IMPLEMENT
+IMPLEMENT inline
 void
 Delay::init()
 {

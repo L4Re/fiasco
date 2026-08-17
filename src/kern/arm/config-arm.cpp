@@ -127,7 +127,7 @@ public:
 //---------------------------------------------------------------------------
 IMPLEMENTATION [arm]:
 
-IMPLEMENT FIASCO_INIT
+IMPLEMENT inline FIASCO_INIT
 void
 Config::init_arch()
 {}
