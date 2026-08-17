@@ -121,15 +121,66 @@ Dmar::init()
   if (!Iommu::iommus().size())
     return;
 
-  Dmar_space::init();
-
   Iommu::Iommu_type type = Iommu::iommus()[0]->type();
   for (auto &iommu : Iommu::iommus())
     if (iommu->type() != type)
       panic("IOMMU: Platform provided IOMMUs of different types.");
+
+  if (type == Iommu::Iommu_type::Smmu_v2)
+    register_dmar_space_smmuv2();
+  else if(type == Iommu::Iommu_type::Smmu_v3)
+    register_dmar_space_smmuv3();
 
   _glbl_iommu.construct();
   initial_kobjects->register_obj(_glbl_iommu, Initial_kobjects::Iommu);
 }
 
 STATIC_INITIALIZE_P(Dmar, DMAR_INIT_PRIO);
+
+//----------------------------------------------------------------------------
+IMPLEMENTATION [iommu && iommu_arm_smmu_v2]:
+
+PRIVATE static
+void Dmar::register_dmar_space_smmuv2()
+{
+  Dmar_space_t<Dmar_space_smmu_v2>::init();
+  Kobject_iface::set_factory(
+    L4_msg_tag::Label_dma_space,
+    &Task::generic_factory<Dmar_space_t<Dmar_space_smmu_v2>>);
+}
+
+//----------------------------------------------------------------------------
+IMPLEMENTATION [iommu && !iommu_arm_smmu_v2]:
+
+PRIVATE static
+void Dmar::register_dmar_space_smmuv2()
+{}
+
+//----------------------------------------------------------------------------
+IMPLEMENTATION [iommu && iommu_arm_smmu_v3]:
+
+PRIVATE static
+void Dmar::register_dmar_space_smmuv3()
+{
+  if (Iommu_smmu_v3::stage2())
+    {
+      Dmar_space_t<Dmar_space_smmu_v3_stage2>::init();
+      Kobject_iface::set_factory(
+          L4_msg_tag::Label_dma_space,
+          &Task::generic_factory<Dmar_space_t<Dmar_space_smmu_v3_stage2>>);
+    }
+  else
+    {
+      Dmar_space_t<Dmar_space_smmu_v3_stage1>::init();
+      Kobject_iface::set_factory(
+        L4_msg_tag::Label_dma_space,
+        &Task::generic_factory<Dmar_space_t<Dmar_space_smmu_v3_stage1>>);
+    }
+}
+
+//----------------------------------------------------------------------------
+IMPLEMENTATION [iommu && !iommu_arm_smmu_v3]:
+
+PRIVATE static
+void Dmar::register_dmar_space_smmuv3()
+{}

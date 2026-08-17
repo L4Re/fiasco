@@ -2097,7 +2097,7 @@ Iommu_smmu_v3::tlb_invalidate_domain(Iommu_domain const &domain)
   // No additional memory barrier necessary to ensure that page tables are
   // visible to the SMMU:
   // - SMMU is coherent: send_cmd_sync() already issues a Mem::wmb().
-  // - SMMU is non-coherent: Pte_iommu::write_back() cleaned the cache.
+  // - SMMU is non-coherent: Dmar_pte_iommu::write_back() cleaned the cache.
 
   // Ensure that we see all bindings that are affected by our page table changes
   // and that all later created bindings, or rather the involved CPUs and
@@ -2164,7 +2164,7 @@ Iommu_smmu_v3::tlb_flush()
   // No additional memory barrier necessary to ensure that page tables are
   // visible to the SMMU:
   // - SMMU is coherent: send_cmd_sync() already issues a Mem::wmb().
-  // - SMMU is non-coherent: Pte_iommu::write_back() cleaned the cache.
+  // - SMMU is non-coherent: Dmar_pte_iommu::write_back() cleaned the cache.
 
   send_cmd_sync(Cmd::tlbi_nsnh_all());
 }

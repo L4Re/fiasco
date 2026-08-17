@@ -9,41 +9,47 @@ class Dmar_space :
   public cxx::Dyn_castable<Dmar_space, Task>
 {
 public:
-  void tlb_flush_current_cpu() override;
-  int bind_mmu(Iommu *mmu, Unsigned32 stream_id, Unsigned64 *max_addr);
-  int unbind_mmu(Iommu *mmu, Unsigned32 stream_id);
-
-private:
-  /**
-   * Mixin for PTE pointers for IOMMUs.
-   */
-  template<typename CLASS>
-  struct Pte_iommu
-  {
-    static constexpr bool need_cache_write_back()
-    { return !Iommu::Coherent; }
-
-    void write_back_if(bool)
-    { write_back(); }
-
-    void write_back()
-    {
-      if constexpr (need_cache_write_back())
-        Mem_unit::clean_dcache(static_cast<CLASS const *>(this)->pte);
-    }
-
-    static void write_back(void *start, void *end)
-    {
-      if constexpr (need_cache_write_back())
-        Mem_unit::clean_dcache(start, end);
-    }
-  };
-
-  bool prealloc_pt();
-  static void init_page_sizes();
+  virtual int bind_mmu(Iommu *mmu, Unsigned32 stream_id, Unsigned64 *max_addr) = 0;
+  virtual int unbind_mmu(Iommu *mmu, Unsigned32 stream_id) = 0;
 
   static bool _initialized;
 };
+
+template<typename DMAR_IMPL>
+class Dmar_space_t : public Dmar_space
+{
+public:
+  using Dmar_space::Dmar_space;
+
+protected:
+  DMAR_IMPL _impl;
+};
+
+/**
+ * Mixin for PTE pointers for IOMMUs.
+ */
+template<typename CLASS>
+struct Dmar_pte_iommu
+{
+  static constexpr bool need_cache_write_back()
+  { return !Iommu::Coherent; }
+
+  void write_back_if(bool)
+  { write_back(); }
+
+  void write_back()
+  {
+    if constexpr (need_cache_write_back())
+      Mem_unit::clean_dcache(static_cast<CLASS const *>(this)->pte);
+  }
+
+  static void write_back(void *start, void *end)
+  {
+    if constexpr (need_cache_write_back())
+      Mem_unit::clean_dcache(start, end);
+  }
+};
+
 
 // -----------------------------------------------------------
 IMPLEMENTATION [iommu]:
@@ -59,43 +65,19 @@ JDB_DEFINE_TYPENAME(Dmar_space, "DMA");
 
 bool Dmar_space::_initialized;
 
-PUBLIC static
+PROTECTED static
 void
 Dmar_space::init()
 {
-  Dmar_space::init_page_sizes();
   _initialized = true;
 }
 
-Dmar_space::Dmarpt_alloc Dmar_space::_dmarpt_alloc;
-
 PUBLIC inline
-bool
-Dmar_space::initialize()
+Dmar_space::Dmar_space(Ram_quota *q)
+: Dyn_castable_class(q, Caps::mem())
 {
-  if (!_initialized)
-    return false;
-
-  _dmarpt = _dmarpt_alloc.q_new(ram_quota());
-  if (!_dmarpt)
-    return false;
-
-  _dmarpt->clear(Dmar_pte_ptr::need_cache_write_back());
-
-  if (!prealloc_pt())
-    {
-      _dmarpt_alloc.q_free(ram_quota(), _dmarpt);
-      _dmarpt = nullptr;
-      return false;
-    }
-
-  return true;
+  _tlb_type = Tlb_iommu;
 }
-
-IMPLEMENT_DEFAULT inline
-bool
-Dmar_space::prealloc_pt()
-{ return true; }
 
 PUBLIC inline
 int
@@ -105,12 +87,51 @@ Dmar_space::resume_vcpu(Context *, Vcpu_state *, bool) override
 }
 
 PUBLIC
-bool
-Dmar_space::v_lookup(Mem_space::Vaddr virt, Mem_space::Phys_addr *phys,
-                     Mem_space::Page_order *order,
-                     Mem_space::Attr *page_attribs) override
+void
+Dmar_space::v_add_access_flags(Mem_space::Vaddr, Page::Flags) override
+{}
+
+static Mem_space::Fit_size __dmar_ps;
+
+PUBLIC
+Mem_space::Fit_size const &
+Dmar_space::mem_space_fitting_sizes() const override
+{ return __dmar_ps; }
+
+PROTECTED static
+void
+Dmar_space::add_page_size(Mem_space::Page_order o)
 {
-  auto i = _dmarpt->walk(virt);
+  add_global_page_size(o);
+  __dmar_ps.add_page_size(o);
+}
+
+PUBLIC static template<typename DMAR_IMPL>
+void
+Dmar_space_t<DMAR_IMPL>::init()
+{
+  Dmar_space::init();
+  DMAR_IMPL::init_page_sizes(&Dmar_space::add_page_size);
+}
+
+PUBLIC template<typename DMAR_IMPL> inline
+bool
+Dmar_space_t<DMAR_IMPL>::initialize()
+{
+  if (!_initialized)
+    return false;
+
+  return _impl.alloc_pt(ram_quota());
+}
+
+PUBLIC template<typename DMAR_IMPL>
+bool
+Dmar_space_t<DMAR_IMPL>::v_lookup(Mem_space::Vaddr virt,
+                                  Mem_space::Phys_addr *phys,
+                                  Mem_space::Page_order *order,
+                                  Mem_space::Attr *page_attribs) override
+{
+  auto i = _impl.pt()->walk(virt);
   if (order) *order = Mem_space::Page_order(i.page_order());
 
   if (!i.is_valid())
@@ -122,21 +143,22 @@ Dmar_space::v_lookup(Mem_space::Vaddr virt, Mem_space::Phys_addr *phys,
   return true;
 }
 
-PUBLIC
+PUBLIC template<typename DMAR_IMPL>
 Mem_space::Status
-Dmar_space::v_insert(Mem_space::Phys_addr phys, Mem_space::Vaddr virt,
-                     Mem_space::Page_order order,
-                     Mem_space::Attr page_attribs, bool) override
+Dmar_space_t<DMAR_IMPL>::v_insert(Mem_space::Phys_addr phys,
+                                  Mem_space::Vaddr virt,
+                                  Mem_space::Page_order order,
+                                  Mem_space::Attr page_attribs, bool) override
 {
   assert(cxx::is_zero(cxx::get_lsb(phys, order)));
   assert(cxx::is_zero(cxx::get_lsb(Virt_addr(virt), order)));
 
   int level;
-  for (level = 0; level <= Dmar_pdir::Depth; ++level)
-    if (Mem_space::Page_order(Dmar_pdir::page_order_for_level(level)) <= order)
+  for (level = 0; level <= DMAR_IMPL::Dmar_pdir::Depth; ++level)
+    if (Mem_space::Page_order(DMAR_IMPL::Dmar_pdir::page_order_for_level(level)) <= order)
       break;
 
-  auto i = _dmarpt->walk(virt, level, Dmar_pte_ptr::need_cache_write_back(),
+  auto i = _impl.pt()->walk(virt, level, DMAR_IMPL::Dmar_pte_ptr::need_cache_write_back(),
                          Kmem_alloc::q_allocator(ram_quota()));
 
   if (!i.is_valid() && i.level != level) [[unlikely]]
@@ -169,15 +191,15 @@ Dmar_space::v_insert(Mem_space::Phys_addr phys, Mem_space::Vaddr virt,
     }
 }
 
-PUBLIC
+PUBLIC template<typename DMAR_IMPL>
 Page::Flags
-Dmar_space::v_delete(Mem_space::Vaddr virt,
-                     [[maybe_unused]] Mem_space::Page_order order,
-                     Page::Rights rights) override
+Dmar_space_t<DMAR_IMPL>::v_delete(Mem_space::Vaddr virt,
+                                  [[maybe_unused]] Mem_space::Page_order order,
+                                  Page::Rights rights) override
 {
   assert(cxx::is_zero(cxx::get_lsb(Virt_addr(virt), order)));
 
-  auto pte = _dmarpt->walk(virt);
+  auto pte = _impl.pt()->walk(virt);
 
   if (!pte.is_valid()) [[unlikely]]
     return Page::Flags::None();
@@ -194,89 +216,62 @@ Dmar_space::v_delete(Mem_space::Vaddr virt,
   return flags;
 }
 
-PUBLIC
+PUBLIC template<typename DMAR_IMPL>
 void
-Dmar_space::v_add_access_flags(Mem_space::Vaddr, Page::Flags) override
-{}
-
-static Mem_space::Fit_size __dmar_ps;
-
-PUBLIC
-Mem_space::Fit_size const &
-Dmar_space::mem_space_fitting_sizes() const override
-{ return __dmar_ps; }
-
-PRIVATE static
-void
-Dmar_space::add_page_size(Mem_space::Page_order o)
+Dmar_space_t<DMAR_IMPL>::destroy(Kobjects_list &reap_list) override
 {
-  add_global_page_size(o);
-  __dmar_ps.add_page_size(o);
+  Task::destroy(reap_list);
+  _impl.remove_from_all_iommus();
 }
 
-static Kmem_slab_t<Dmar_space> _dmar_space_allocator("Dmar_space");
-
-PUBLIC static
-Dmar_space *Dmar_space::alloc(Ram_quota *q)
+PUBLIC static template<typename DMAR_IMPL>
+Dmar_space_t<DMAR_IMPL> *
+Dmar_space_t<DMAR_IMPL>::alloc(Ram_quota *q)
 {
-  return _dmar_space_allocator.q_new(q, q);
+  return DMAR_IMPL::alloc_space(q);
 }
 
-PUBLIC
+PUBLIC template<typename DMAR_IMPL>
 void *
-Dmar_space::operator new ([[maybe_unused]] size_t size, void *p) noexcept
+Dmar_space_t<DMAR_IMPL>::operator new ([[maybe_unused]] size_t size, void *p) noexcept
 {
-  assert (size == sizeof (Dmar_space));
+  assert (size == sizeof (Dmar_space_t<DMAR_IMPL>));
   return p;
 }
 
-PUBLIC
+PUBLIC template<typename DMAR_IMPL>
 void
-Dmar_space::operator delete (Dmar_space *space, std::destroying_delete_t)
+Dmar_space_t<DMAR_IMPL>::operator delete (Dmar_space_t<DMAR_IMPL> *space, std::destroying_delete_t)
 {
   Ram_quota *q = space->ram_quota();
-  space->~Dmar_space();
-  _dmar_space_allocator.q_free(q, space);
+  DMAR_IMPL::free_space(q, space);
 }
 
-PUBLIC inline
-Dmar_space::Dmar_space(Ram_quota *q)
-: Dyn_castable_class(q, Caps::mem()),
-  _dmarpt(nullptr)
+PUBLIC template<typename DMAR_IMPL>
+Dmar_space_t<DMAR_IMPL>::~Dmar_space_t() override
 {
-  _tlb_type = Tlb_iommu;
+  _impl.remove_from_all_iommus();
+  _impl.free_pt(ram_quota());
 }
 
-PUBLIC
+PUBLIC template<typename DMAR_IMPL>
 void
-Dmar_space::destroy(Kobjects_list &reap_list) override
+Dmar_space_t<DMAR_IMPL>::tlb_flush_current_cpu() override
 {
-  Task::destroy(reap_list);
-  remove_from_all_iommus();
+  _impl.tlb_flush_current_cpu();
 }
 
-PUBLIC
-Dmar_space::~Dmar_space() override
+PUBLIC template<typename DMAR_IMPL>
+int
+Dmar_space_t<DMAR_IMPL>::bind_mmu(Iommu *mmu, Unsigned32 stream_id,
+                                  Unsigned64 *max_addr) override
 {
-  remove_from_all_iommus();
-
-  if (_dmarpt)
-    {
-      _dmarpt->destroy(Virt_addr(0UL), Virt_addr(~0UL), 0, Dmar_pdir::Depth,
-                       Kmem_alloc::q_allocator(ram_quota()));
-      _dmarpt_alloc.q_free(ram_quota(), _dmarpt);
-      _dmarpt = nullptr;
-    }
+  return _impl.bind_mmu(mmu, stream_id, max_addr);
 }
 
-namespace {
-
-static inline
-void __attribute__((constructor)) FIASCO_INIT_SFX(dmar_space_register_factory)
-register_factory()
+PUBLIC template<typename DMAR_IMPL>
+int
+Dmar_space_t<DMAR_IMPL>::unbind_mmu(Iommu *mmu, Unsigned32 stream_id) override
 {
-  Kobject_iface::set_factory(L4_msg_tag::Label_dma_space,
-                             &Task::generic_factory<Dmar_space>);
-}
-
+  return _impl.unbind_mmu(mmu, stream_id);
 }

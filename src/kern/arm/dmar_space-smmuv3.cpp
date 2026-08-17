@@ -1,8 +1,17 @@
 // -----------------------------------------------------------
 INTERFACE [iommu_arm_smmu_v3 && 64bit]:
 
-EXTENSION class Dmar_space
+template<typename IMPL>
+class Dmar_space_smmu_v3_mixin
 {
+public:
+  struct Ptab_cfg
+  {
+    Address pt_phys_addr;
+    unsigned char virt_addr_size;
+    unsigned char start_level;
+  };
+
   typedef Ptab::Tupel<Ptab::Traits<Unsigned64, 39, 9, false>,
                       Ptab::Traits<Unsigned64, 30, 9, true>,
                       Ptab::Traits<Unsigned64, 21, 9, true>,
@@ -10,19 +19,17 @@ EXTENSION class Dmar_space
   typedef Ptab::Shift<Dmar_traits, 12>::List Dmar_traits_vpn;
   typedef Ptab::Page_addr_wrap<Page_number, 12> Dmar_va_vpn;
 
-  struct Ptab_cfg
-  {
-    Address pt_phys_addr;
-    unsigned char virt_addr_size;
-    unsigned char start_level;
-  };
+protected:
+  IMPL *impl() { return nonull_static_cast<IMPL *>(this); }
+
+private:
+  Iommu_domain _domain;
 };
 
-// -----------------------------------------------------------
-INTERFACE [iommu_arm_smmu_v3 && !arm_iommu_stage2 && 64bit]:
-
-EXTENSION class Dmar_space
+class Dmar_space_smmu_v3_stage1
+: public Dmar_space_smmu_v3_mixin<Dmar_space_smmu_v3_stage1>
 {
+public:
   struct Stage1_page_attr
   {
     // See Iommu_smmu_v3::Mair0_bits for the definition.
@@ -46,7 +53,7 @@ EXTENSION class Dmar_space
 
   class Dmar_pte_ptr :
     public Pte_long_desc<Dmar_pte_ptr>,
-    public Pte_iommu<Dmar_pte_ptr>,
+    public Dmar_pte_iommu<Dmar_pte_ptr>,
     public Pte_long_attribs<Dmar_pte_ptr, Stage1_page_attr>,
     public Pte_generic<Dmar_pte_ptr, Unsigned64>
   {
@@ -61,27 +68,33 @@ EXTENSION class Dmar_space
         + Dmar_traits_vpn::Head::Base_shift;
     }
   };
+
+  using Dmar_pdir = Pdir_t<Dmar_pte_ptr, Dmar_traits_vpn, Dmar_va_vpn>;
+
+  Dmar_pdir *pt() { return _dmarpt; }
+
+private:
+  Dmar_pdir *_dmarpt;
 };
 
-// -----------------------------------------------------------
-INTERFACE [iommu_arm_smmu_v3 && arm_iommu_stage2 && cpu_virt && 64bit]:
-
-EXTENSION class Dmar_space
+class Dmar_space_smmu_v3_stage2
+: public Dmar_space_smmu_v3_mixin<Dmar_space_smmu_v3_stage2>
 {
+public:
   struct Stage2_page_attr
-  {
-    enum Attribs_enum : Mword
     {
-      Cache_mask    = 0x03c,
-      NONCACHEABLE  = 0x000, ///< Caching is off
-      CACHEABLE     = 0x03c, ///< Cache is enabled
-      BUFFERED      = 0x014, ///< Write buffer enabled -- Normal, non-cached
+      enum Attribs_enum : Mword
+      {
+        Cache_mask    = 0x03c,
+        NONCACHEABLE  = 0x000, ///< Caching is off
+        CACHEABLE     = 0x03c, ///< Cache is enabled
+        BUFFERED      = 0x014, ///< Write buffer enabled -- Normal, non-cached
+      };
     };
-  };
 
   class Dmar_pte_ptr :
     public Pte_long_desc<Dmar_pte_ptr>,
-    public Pte_iommu<Dmar_pte_ptr>,
+    public Dmar_pte_iommu<Dmar_pte_ptr>,
     public Pte_stage2_attribs<Dmar_pte_ptr, Stage2_page_attr>,
     public Pte_generic<Dmar_pte_ptr, Unsigned64>
   {
@@ -96,28 +109,105 @@ EXTENSION class Dmar_space
         + Dmar_traits_vpn::Head::Base_shift;
     }
   };
-};
 
-// -----------------------------------------------------------
-INTERFACE [iommu_arm_smmu_v3]:
-
-EXTENSION class Dmar_space
-{
   using Dmar_pdir = Pdir_t<Dmar_pte_ptr, Dmar_traits_vpn, Dmar_va_vpn>;
+
+  Dmar_pdir *pt() { return _dmarpt; }
+
+private:
   Dmar_pdir *_dmarpt;
-
-  using Dmarpt_alloc = Kmem_slab_t<Dmar_pdir, sizeof(Dmar_pdir)>;
-  static Dmarpt_alloc _dmarpt_alloc;
-
-  Iommu_domain _domain;
 };
 
 // -----------------------------------------------------------
-IMPLEMENTATION [iommu_arm_smmu_v3 && !arm_iommu_stage2]:
+IMPLEMENTATION [iommu_arm_smmu_v3]:
 
-PRIVATE inline
-Dmar_space::Ptab_cfg
-Dmar_space::get_ptab_cfg(Iommu_smmu_v3 *)
+#include "kmem.h"
+
+PUBLIC static template<typename IMPL>
+void
+Dmar_space_smmu_v3_mixin<IMPL>::init_page_sizes(auto add_page_size)
+{
+  add_page_size(Mem_space::Page_order(12));
+  add_page_size(Mem_space::Page_order(21)); // 2 MiB
+  add_page_size(Mem_space::Page_order(30)); // 1 GiB
+}
+
+PUBLIC template<typename IMPL>
+void
+Dmar_space_smmu_v3_mixin<IMPL>::tlb_flush_current_cpu()
+{
+  Iommu_smmu_v3::tlb_invalidate_domain(_domain);
+}
+
+PUBLIC template<typename IMPL>
+int
+Dmar_space_smmu_v3_mixin<IMPL>::bind_mmu(Iommu *mmu, Unsigned32 stream_id,
+                                         Unsigned64 *max_addr)
+{
+  // All registered IOMMUs are SMMUv3 in this configuration.
+  auto *smmu = static_cast<Iommu_smmu_v3 *>(mmu);
+  auto [pt_phys_addr, virt_addr_size, start_level] = impl()->get_ptab_cfg(smmu);
+  *max_addr = (Unsigned64{1} << virt_addr_size) - 1;
+  return smmu->bind(stream_id, _domain, pt_phys_addr, virt_addr_size,
+                    start_level);
+}
+
+PUBLIC template<typename IMPL>
+int
+Dmar_space_smmu_v3_mixin<IMPL>::unbind_mmu(Iommu *mmu,
+                                           Unsigned32 stream_id)
+{
+  // All registered IOMMUs are SMMUv3 in this configuration.
+  auto *smmu = static_cast<Iommu_smmu_v3 *>(mmu);
+  auto pt_phys_addr = impl()->get_ptab_cfg(smmu).pt_phys_addr;
+  return smmu->unbind(stream_id, _domain, pt_phys_addr);
+}
+
+PUBLIC template<typename IMPL>
+void
+Dmar_space_smmu_v3_mixin<IMPL>::remove_from_all_iommus()
+{
+  for (Iommu *iommu : Iommu::iommus())
+    {
+      // All registered IOMMUs are SMMUv3 in this configuration.
+      auto *smmu = static_cast<Iommu_smmu_v3 *>(iommu);
+      auto pt_phys_addr = impl()->get_ptab_cfg(smmu).pt_phys_addr;
+      smmu->remove(_domain, pt_phys_addr);
+    }
+}
+
+// Stage 1
+static Kmem_slab_t<Dmar_space_smmu_v3_stage1::Dmar_pdir,
+                   sizeof(Dmar_space_smmu_v3_stage1::Dmar_pdir)> _dmarpt_alloc_stage1;
+
+PUBLIC
+bool
+Dmar_space_smmu_v3_stage1::alloc_pt(Ram_quota *ram_quota)
+{
+  _dmarpt = _dmarpt_alloc_stage1.q_new(ram_quota);
+  if (!_dmarpt)
+    return false;
+
+  _dmarpt->clear(Dmar_pte_ptr::need_cache_write_back());
+  return true;
+}
+
+PUBLIC
+void
+Dmar_space_smmu_v3_stage1::free_pt(Ram_quota *ram_quota)
+{
+  if (!_dmarpt)
+    return;
+
+  _dmarpt->destroy(Virt_addr(0UL), Virt_addr(~0UL), 0, Dmar_pdir::Depth,
+                   Kmem_alloc::q_allocator(ram_quota));
+  _dmarpt_alloc_stage1.q_free(ram_quota, _dmarpt);
+  _dmarpt = nullptr;
+}
+
+PUBLIC
+Dmar_space_smmu_v3_stage1::Ptab_cfg
+Dmar_space_smmu_v3_stage1::get_ptab_cfg(Iommu_smmu_v3 *) const
 {
   unsigned char virt_addr_size = Dmar_pdir::page_order_for_level(0)
                                  + Dmar_pdir::Levels::size(0);
@@ -125,28 +215,71 @@ Dmar_space::get_ptab_cfg(Iommu_smmu_v3 *)
   return {Mem_layout::pmem_to_phys(_dmarpt), virt_addr_size, 0};
 }
 
-// -----------------------------------------------------------
-IMPLEMENTATION [iommu_arm_smmu_v3 && arm_iommu_stage2]:
+static Kmem_slab_t<Dmar_space_t<Dmar_space_smmu_v3_stage1>>
+  dmar_space_alloc_stage1("Dmar_space_smmu_v3_stage1");
 
-IMPLEMENT_OVERRIDE inline
-bool
-Dmar_space::prealloc_pt()
+PUBLIC static
+Dmar_space_t<Dmar_space_smmu_v3_stage1> *
+Dmar_space_smmu_v3_stage1::alloc_space(Ram_quota *quota)
 {
+  return dmar_space_alloc_stage1.q_new(quota, quota);
+}
+
+PUBLIC static
+void
+Dmar_space_smmu_v3_stage1::free_space(Ram_quota *quota,
+                                      Dmar_space_t<Dmar_space_smmu_v3_stage1> *space)
+{
+  dmar_space_alloc_stage1.q_del(quota, space);
+}
+
+// Stage2
+static Kmem_slab_t<Dmar_space_smmu_v3_stage2::Dmar_pdir,
+                   sizeof(Dmar_space_smmu_v3_stage2::Dmar_pdir)> _dmarpt_alloc_stage2;
+
+PUBLIC
+bool
+Dmar_space_smmu_v3_stage2::alloc_pt(Ram_quota *ram_quota)
+{
+  _dmarpt = _dmarpt_alloc_stage2.q_new(ram_quota);
+  if (!_dmarpt)
+    return false;
+
+  _dmarpt->clear(Dmar_pte_ptr::need_cache_write_back());
+
   // Force allocation of the first level 1 page table entry. Required to
   // support SMMUs that require to start at level 1 instead of level 0. See
   // get_ptab_cfg() below.
-  auto i = _dmarpt->walk(Virt_addr(0), 1, Dmar_pte_ptr::need_cache_write_back(),
-                         Kmem_alloc::q_allocator(ram_quota()));
-  return i.level == 1;
+  auto i = _dmarpt->walk(Virt_addr(0), 1, Dmar_pdir::Pte_ptr::need_cache_write_back(),
+                         Kmem_alloc::q_allocator(ram_quota));
+  if (i.level == 1) [[likely]]
+    return true;
+
+  // Allocation failed.
+  free_pt(ram_quota);
+  return false;
 }
 
-PRIVATE inline
-Dmar_space::Ptab_cfg
-Dmar_space::get_ptab_cfg(Iommu_smmu_v3 *iommu)
+PUBLIC
+void
+Dmar_space_smmu_v3_stage2::free_pt(Ram_quota *ram_quota)
+{
+  if (!_dmarpt)
+    return;
+
+  _dmarpt->destroy(Virt_addr(0UL), Virt_addr(~0UL), 0, Dmar_pdir::Depth,
+                   Kmem_alloc::q_allocator(ram_quota));
+  _dmarpt_alloc_stage2.q_free(ram_quota, _dmarpt);
+  _dmarpt = nullptr;
+}
+
+PUBLIC
+Dmar_space_smmu_v3_stage2::Ptab_cfg
+Dmar_space_smmu_v3_stage2::get_ptab_cfg(Iommu_smmu_v3 *smmu) const
 {
   constexpr unsigned max_ipa_size = Dmar_pdir::page_order_for_level(0)
                                     + Dmar_pdir::Levels::size(0);
-  unsigned char ias = min(iommu->ipa_size(), max_ipa_size);
+  unsigned char ias = min(smmu->ipa_size(), max_ipa_size);
   if (ias >= 44)
     // From 44 bits and above, use 4 levels and start at level 0
     return {Mem_layout::pmem_to_phys(_dmarpt), ias, 2};
@@ -174,58 +307,20 @@ Dmar_space::get_ptab_cfg(Iommu_smmu_v3 *iommu)
   return {pte.next_level(), ias, 1};
 }
 
-// -----------------------------------------------------------
-IMPLEMENTATION [iommu_arm_smmu_v3]:
+static Kmem_slab_t<Dmar_space_t<Dmar_space_smmu_v3_stage2>>
+  dmar_space_alloc_stage2("Dmar_space_smmu_v3_stage2");
 
-#include "kmem.h"
+PUBLIC static
+Dmar_space_t<Dmar_space_smmu_v3_stage2> *
+Dmar_space_smmu_v3_stage2::alloc_space(Ram_quota *quota)
+{
+  return dmar_space_alloc_stage2.q_new(quota, quota);
+}
 
-IMPLEMENT
+PUBLIC static
 void
-Dmar_space::init_page_sizes()
+Dmar_space_smmu_v3_stage2::free_space(Ram_quota *quota,
+                                      Dmar_space_t<Dmar_space_smmu_v3_stage2> *space)
 {
-  add_page_size(Mem_space::Page_order(12));
-  add_page_size(Mem_space::Page_order(21)); // 2 MiB
-  add_page_size(Mem_space::Page_order(30)); // 1 GiB
-}
-
-IMPLEMENT
-void
-Dmar_space::tlb_flush_current_cpu()
-{
-  Iommu_smmu_v3::tlb_invalidate_domain(_domain);
-}
-
-IMPLEMENT
-int
-Dmar_space::bind_mmu(Iommu *mmu, Unsigned32 stream_id, Unsigned64 *max_addr)
-{
-  // All registered IOMMUs are SMMUv3 in this configuration.
-  auto *smmu = static_cast<Iommu_smmu_v3 *>(mmu);
-  auto [pt_phys_addr, virt_addr_size, start_level] = get_ptab_cfg(smmu);
-  *max_addr = (Unsigned64{1} << virt_addr_size) - 1;
-  return smmu->bind(stream_id, _domain, pt_phys_addr, virt_addr_size,
-                    start_level);
-}
-
-IMPLEMENT
-int
-Dmar_space::unbind_mmu(Iommu *mmu, Unsigned32 stream_id)
-{
-  // All registered IOMMUs are SMMUv3 in this configuration.
-  auto *smmu = static_cast<Iommu_smmu_v3 *>(mmu);
-  auto pt_phys_addr = get_ptab_cfg(smmu).pt_phys_addr;
-  return smmu->unbind(stream_id, _domain, pt_phys_addr);
-}
-
-PRIVATE
-void
-Dmar_space::remove_from_all_iommus()
-{
-  for (Iommu *iommu : Iommu::iommus())
-    {
-      // All registered IOMMUs are SMMUv3 in this configuration.
-      auto *smmu = static_cast<Iommu_smmu_v3 *>(iommu);
-      auto pt_phys_addr = get_ptab_cfg(smmu).pt_phys_addr;
-      smmu->remove(_domain, pt_phys_addr);
-    }
+  dmar_space_alloc_stage2.q_del(quota, space);
 }
