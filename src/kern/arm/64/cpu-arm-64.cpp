@@ -314,8 +314,13 @@ Cpu::init_hyp_mode(bool is_boot_cpu)
       panic("Need to use a 3-level page-table on this system (ARM_PT40*).");
 
   if (is_boot_cpu)
-    printf("Using %u-level page tables with PA range of %u bits.\n",
-           Cpubits::Pt4() ? 4 : 3, phys_bits());
+    {
+      unsigned ptab_level = 3;
+      if (Cpubits::Pt4())
+        ptab_level = 4;
+      printf("Using %u-level page tables with PA range of %u bits.\n",
+             ptab_level, phys_bits());
+    }
 
   init_hyp_mode_common(is_boot_cpu);
 }
