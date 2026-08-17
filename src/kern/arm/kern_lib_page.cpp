@@ -23,7 +23,7 @@ void Kern_lib_page::init()
                               Kpdir::Depth, true,
                               Kmem_alloc::q_allocator(Ram_quota::root.unwrap()));
 
-  if (pte.level == 0) // allocation of second level faild
+  if (pte.level != Kpdir::Depth) // allocation of second level failed
     panic("Error mapping kernel-lib page to %p",
           reinterpret_cast<void *>(Kmem_space::Kern_lib_base));
 
