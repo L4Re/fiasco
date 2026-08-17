@@ -152,7 +152,7 @@ int Uart_pl011::get_char(bool blocking) const
 
 } // namespace L4
 
-static l4re_device_spec_dt_ids dt_ids[] = {
+static const l4re_device_spec_dt_ids dt_ids[] = {
   { .compatible = "arm,pl011" },
   { .compatible = "arm,sbsa-uart" },
   {},

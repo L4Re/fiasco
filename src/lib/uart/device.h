@@ -20,8 +20,8 @@ struct l4re_device_spec_pcidev_ids
 
 struct l4re_device_ids
 {
-  struct l4re_device_spec_dt_ids     *dt = nullptr;
-  struct l4re_device_spec_pcidev_ids *pcidev = nullptr;
+  struct l4re_device_spec_dt_ids         const *dt = nullptr;
+  struct l4re_device_spec_pcidev_ids const *pcidev = nullptr;
 };
 
 // ---- Internal device
@@ -59,7 +59,7 @@ l4re_dev_create_by_dt_compatible(const char *dt_compatible,
     {
       const l4re_device_ids *ids = (*d)->ids();
       if (ids->dt)
-        for (l4re_device_spec_dt_ids *dt_id = ids->dt; dt_id->compatible; ++dt_id)
+        for (l4re_device_spec_dt_ids const *dt_id = ids->dt; dt_id->compatible; ++dt_id)
           if (!strcmp(dt_compatible, dt_id->compatible))
             {
               device = *d;

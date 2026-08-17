@@ -38,7 +38,7 @@ void Uart_16550_dw::irq_ack()
 
 } // namespace L4
 
-static l4re_device_spec_dt_ids dt_ids[] = {
+static const l4re_device_spec_dt_ids dt_ids[] = {
   { .compatible = "snps,dw-apb-uart" },
   {},
 };

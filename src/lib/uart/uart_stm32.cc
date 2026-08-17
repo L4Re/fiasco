@@ -116,7 +116,7 @@ int Uart_stm32::get_char(bool blocking) const
 
 } // namespace L4
 
-static l4re_device_spec_dt_ids dt_ids[] = {
+static const l4re_device_spec_dt_ids dt_ids[] = {
   { .compatible = "st,stm32f7-uart" },
   { .compatible = "st,stm32h7-uart" },
   {},

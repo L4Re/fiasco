@@ -114,7 +114,7 @@ int Uart_lpuart::get_char(bool blocking) const
 
 } // namespace L4
 
-static l4re_device_spec_dt_ids dt_ids_lpuart[] = {
+static const l4re_device_spec_dt_ids dt_ids_lpuart[] = {
   { .compatible = "fsl,imx7ulp-lpuart" }, // this is mainly used compatible
   { .compatible = "fsl,imx8qm-lpuart" },
   { .compatible = "fsl,imx8ulp-lpuart" },

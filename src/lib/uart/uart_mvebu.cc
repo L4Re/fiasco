@@ -92,7 +92,7 @@ int Uart_mvebu::get_char(bool blocking) const
 
 } // namespace L4
 
-static l4re_device_spec_dt_ids dt_ids[] = {
+static const l4re_device_spec_dt_ids dt_ids[] = {
   { .compatible = "marvell,armada-3700-uart" },
   {},
 };

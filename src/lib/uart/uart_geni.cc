@@ -179,7 +179,7 @@ int Uart_geni::get_char(bool blocking) const
 
 }
 
-static l4re_device_spec_dt_ids dt_ids[] = {
+static const l4re_device_spec_dt_ids dt_ids[] = {
   { .compatible = "qcom,geni-uart" },
   { .compatible = "qcom,geni-debug-uart" },
   {},

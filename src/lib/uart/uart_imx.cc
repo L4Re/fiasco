@@ -200,35 +200,35 @@ int Uart_imx::get_char(bool blocking) const
 } // namespace L4
 
 // This needs merging and a proper clock infrastructure
-static l4re_device_spec_dt_ids dt_ids_imx21[] = {
+static const l4re_device_spec_dt_ids dt_ids_imx21[] = {
   { .compatible = "fsl,imx21-uart" },
   {},
 };
 
-static l4re_device_spec_dt_ids dt_ids_imx35[] = {
+static const l4re_device_spec_dt_ids dt_ids_imx35[] = {
   { .compatible = "fsl,imx35-uart" },
   {},
 };
 
-static l4re_device_spec_dt_ids dt_ids_imx5[] = {
+static const l4re_device_spec_dt_ids dt_ids_imx5[] = {
   { .compatible = "fsl,imx51-uart" },
   { .compatible = "fsl,imx53-uart" },
   {},
 };
 
-static l4re_device_spec_dt_ids dt_ids_imx6[] = {
+static const l4re_device_spec_dt_ids dt_ids_imx6[] = {
   { .compatible = "fsl,imx6ul-uart" },
   { .compatible = "fsl,imx6sx-uart" },
   { .compatible = "fsl,imx6q-uart" },
   {},
 };
 
-static l4re_device_spec_dt_ids dt_ids_imx7[] = {
+static const l4re_device_spec_dt_ids dt_ids_imx7[] = {
   { .compatible = "fsl,imx7d-uart" },
   {},
 };
 
-static l4re_device_spec_dt_ids dt_ids_imx8[] = {
+static const l4re_device_spec_dt_ids dt_ids_imx8[] = {
   { .compatible = "fsl,imx8mm-uart" },
   { .compatible = "fsl,imx8mp-uart" },
   { .compatible = "fsl,imx8mn-uart" },
