@@ -1941,6 +1941,7 @@ IMPLEMENT
 void
 Iommu_smmu_v3::setup(void *base_addr, unsigned eventq_irq, unsigned gerror_irq)
 {
+  _type = Iommu_type::Smmu_v3;
   _rp0 = Mmio_register_block(base_addr);
   _rp1 = Mmio_register_block(offset_cast<void *>(base_addr, 0x10000));
 

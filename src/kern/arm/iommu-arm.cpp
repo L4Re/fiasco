@@ -39,6 +39,15 @@ public:
   unsigned idx() const
   { return _idx; }
 
+  enum class Iommu_type : Unsigned8
+  {
+    Smmu_v2,
+    Smmu_v3,
+  };
+
+  Iommu_type type() const
+  { return _type; }
+
   static constexpr bool Coherent = TAG_ENABLED(arm_iommu_coherent);
 
 private:
@@ -48,6 +57,8 @@ private:
   Unsigned16 _idx;
 
 protected:
+  Iommu_type _type;
+
   /// Register this IOMMU in the global registry ordered by the object
   /// construction order.
   Iommu();

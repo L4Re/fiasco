@@ -786,6 +786,7 @@ IMPLEMENT
 void
 Iommu_smmu_v2::setup(Version version, void *base_addr, unsigned mask)
 {
+  _type = Iommu_type::Smmu_v2;
   _version = version;
   _gr0 = Mmio_register_block(base_addr);
 
