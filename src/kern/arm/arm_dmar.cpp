@@ -123,6 +123,11 @@ Dmar::init()
 
   Dmar_space::init();
 
+  Iommu::Iommu_type type = Iommu::iommus()[0]->type();
+  for (auto &iommu : Iommu::iommus())
+    if (iommu->type() != type)
+      panic("IOMMU: Platform provided IOMMUs of different types.");
+
   _glbl_iommu.construct();
   initial_kobjects->register_obj(_glbl_iommu, Initial_kobjects::Iommu);
 }
