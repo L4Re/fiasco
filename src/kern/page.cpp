@@ -54,9 +54,6 @@ public:
     static constexpr Attr kern_global(Rights r)
     { return Attr(r, Type::Normal(), Kern::Global(), Flags::None()); }
 
-    static constexpr Attr writable()
-    { return Attr(Rights::W(), Type::Normal(), Kern::None(), Flags::None()); }
-
     Attr apply(Attr o) const
     {
       Attr n = *this;

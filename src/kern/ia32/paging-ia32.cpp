@@ -267,16 +267,6 @@ Pte_ptr::write_back_if(bool)
 
 PUBLIC inline
 void
-Pte_ptr::add_attribs(Page::Attr attr)
-{ *pte |= make_attribs(attr); }
-
-PUBLIC inline
-void
-Pte_ptr::del_attribs(Page::Attr attr)
-{ *pte &= ~make_attribs(attr); }
-
-PUBLIC inline
-void
 Pte_ptr::add_flags(Page::Flags flags)
 { *pte |= make_flags(flags); }
 
@@ -284,11 +274,26 @@ PUBLIC inline
 void
 Pte_ptr::del_rights(Page::Rights r)
 {
+  assert(!(r & ~(Page::Rights::W() | Page::Rights::X())));
+
   if (r & Page::Rights::W())
     *pte &= ~Writable;
 
   if (r & Page::Rights::X())
     *pte |= XD;
+}
+
+PUBLIC inline
+void
+Pte_ptr::add_rights(Page::Rights r)
+{
+  assert(!(r & ~(Page::Rights::W() | Page::Rights::X())));
+
+  if (r & Page::Rights::W())
+    *pte |= Writable;
+
+  if (r & Page::Rights::X())
+    *pte &= ~XD;
 }
 
 //---------------------------------------------------------------------------

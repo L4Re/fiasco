@@ -53,9 +53,9 @@ Idt::set_writable(bool writable)
   assert(e.is_valid() && e.level == Pdir::Depth);
 
   if (writable)
-    e.add_attribs(Page::Attr::writable()); // Make read-write
+    e.add_rights(Page::Rights::W());
   else
-    e.del_attribs(Page::Attr::writable()); // Make read-only
+    e.del_rights(Page::Rights::W());
 
   Mem_unit::tlb_flush_kernel(_idt);
 }
