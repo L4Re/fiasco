@@ -16,6 +16,8 @@
 
 	.macro save_all_regs
 	pusha
+        /* hide kernel stack pointer from Trap_state and vCPU state */
+        movl    $0, 3*4(%esp)
 	.endm
 
 	.macro restore_all_regs
