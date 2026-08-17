@@ -19,8 +19,6 @@ Vmem_alloc::page_alloc(void *address, Zero_fill zf, unsigned mode)
   if (!vpage) [[unlikely]]
     return nullptr;
 
-  Address page = Kmem::kdir->virt_to_phys(reinterpret_cast<Address>(vpage));
-
   // insert page into master page table
   auto pte = Kmem::kdir->walk(Virt_addr(address),
                               Kpdir::Depth, false,
@@ -30,7 +28,7 @@ Vmem_alloc::page_alloc(void *address, Zero_fill zf, unsigned mode)
   if (mode & User)
     r |= Page::Rights::U();
 
-  pte.set_page(Phys_mem_addr(page), Page::Attr::kern_global(r));
+  pte.set_page(Kmem::kdir->virt_to_phys(vpage), Page::Attr::kern_global(r));
 
   // Full tlb flush as global mappings have been changed.
   Mem_unit::tlb_flush();

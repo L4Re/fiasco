@@ -127,8 +127,7 @@ Mem_space::Mem_space(Ram_quota *q, Dir_type *pdir)
 {
   _current.cpu(Cpu_number::boot_cpu()) = this;
 
-  Address dir_addr = reinterpret_cast<Address>(_dir);
-  _dir_phys = Phys_mem_addr(Kmem::kdir->virt_to_phys(dir_addr));
+  _dir_phys = Kmem::kdir->virt_to_phys(_dir);
 }
 
 PROTECTED inline virtual
@@ -155,8 +154,7 @@ Mem_space::initialize()
   _dir = alloc_dir();
   if (!_dir)
     return false;
-  _dir_phys =
-    Phys_mem_addr(Kmem::kdir->virt_to_phys(reinterpret_cast<Address>(_dir)));
+  _dir_phys = Kmem::kdir->virt_to_phys(_dir);
 
   return true;
 }

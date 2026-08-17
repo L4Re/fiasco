@@ -22,7 +22,7 @@ Kernel_task::map_syscall_page(void *p)
     panic("Error mapping syscall page to %p",
           reinterpret_cast<void *>(Kmem_space::Syscalls));
 
-  pte.set_page(Phys_mem_addr(Kmem::kdir->virt_to_phys(reinterpret_cast<Address>(p))),
+  pte.set_page(Kmem::kdir->virt_to_phys(p),
                Page::Attr::kern_global(Page::Rights::URX()));
   pte.write_back_if(true);
   Mem_unit::tlb_flush_kernel(Kmem_space::Syscalls);

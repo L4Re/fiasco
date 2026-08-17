@@ -24,21 +24,17 @@ void *Vmem_alloc::page_alloc(void *address, Zero_fill zf, unsigned mode)
   if (!vpage) [[unlikely]]
     return nullptr;
 
-  Address page = Kmem::kdir->virt_to_phys(reinterpret_cast<Address>(vpage));
-  if constexpr (0) // Intentionally disabled, only used for diagnostics
-    printf("  allocated page (virt=%p, phys=%08lx\n", vpage, page);
   Mem_unit::inv_dcache(vpage, offset_cast<void *>(vpage, Config::PAGE_SIZE));
 
   // insert page into master page table
-  auto pte = Kmem::kdir->walk(Virt_addr(address),
-                              Kpdir::Depth, true,
+  auto pte = Kmem::kdir->walk(Virt_addr(address), Kpdir::Depth, true,
                               Kmem_alloc::q_allocator(Ram_quota::root.unwrap()));
 
   Page::Rights r = Page::Rights::RWX();
   if (mode & User)
     r |= Page::Rights::U();
 
-  pte.set_page(Phys_mem_addr(page), Page::Attr::kern_global(r));
+  pte.set_page(Kmem::kdir->virt_to_phys(vpage), Page::Attr::kern_global(r));
   pte.write_back_if(true);
   Mem_unit::tlb_flush_kernel(reinterpret_cast<Address>(address));
 
