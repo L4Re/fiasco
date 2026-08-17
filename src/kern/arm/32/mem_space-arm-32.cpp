@@ -38,9 +38,9 @@ PROTECTED
 Ptab::Sync_result
 Mem_space::sync_kernel()
 {
-  auto pte = _dir->walk(Virt_addr(Mem_layout::Kern_lib_base),
-      Pdir::Depth, true, Kmem_alloc::q_allocator(ram_quota()));
-  if (pte.level < Pdir::Depth - 1)
+  auto pte = _dir->walk(Virt_addr(Mem_layout::Kern_lib_base), Pdir::Depth, true,
+                        Kmem_alloc::q_allocator(ram_quota()));
+  if (pte.level != Pdir::Depth)
     return Ptab::Sync_result::Allocation_failed;
 
   extern char kern_lib_start[];
@@ -50,10 +50,9 @@ Mem_space::sync_kernel()
 
   pte.write_back_if(true, c_asid());
 
-  pte = _dir->walk(Virt_addr(Mem_layout::Syscalls),
-      Pdir::Depth, true, Kmem_alloc::q_allocator(ram_quota()));
-
-  if (pte.level < Pdir::Depth - 1)
+  pte = _dir->walk(Virt_addr(Mem_layout::Syscalls), Pdir::Depth, true,
+                   Kmem_alloc::q_allocator(ram_quota()));
+  if (pte.level != Pdir::Depth)
     return Ptab::Sync_result::Allocation_failed;
 
   pte.set_page(Phys_mem_addr(__mem_space_syscall_page),
