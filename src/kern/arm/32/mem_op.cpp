@@ -96,7 +96,20 @@ IMPLEMENTATION [arm && !cpu_virt]:
 
 PRIVATE static inline void
 Mem_op::__arm_mem_cache_maint(Op_cache op, void const *start, void const *end)
-{ __arm_kmem_cache_maint(op, start, end); }
+{
+  if (op == Op_cache::Dma_coherent_full)
+    {
+      __arm_kmem_cache_maint(Op_cache::Dma_coherent_full, nullptr, nullptr);
+      return;
+    }
+
+  // For the sake of simplification, reject the operation even if the range does
+  // only partly exceed Mem_layout::user_max().
+  Address s = reinterpret_cast<Address>(start);
+  Address e = reinterpret_cast<Address>(end);
+  if (Space::is_user_memory(s, e - s))
+    __arm_kmem_cache_maint(op, start, end);
+}
 
 // ------------------------------------------------------------------------
 IMPLEMENTATION [arm && cpu_virt]:
@@ -115,6 +128,8 @@ Mem_op::__arm_mem_cache_maint(Op_cache op, void const *start, void const *end)
 
   Context *c = current();
 
+  // Unlike !cpu_virt, we cannot test for Space::is_user_memory() because user
+  // address spaces and VMs may cover 4 GiB.
   while (v < e)
     {
       Mem_space::Page_order phys_size;
