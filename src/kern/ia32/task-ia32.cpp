@@ -43,7 +43,8 @@ Task::invoke_arch(L4_msg_tag &tag, Utcb *utcb)
           if (!_ldt.addr())
             _ldt.alloc();
 
-          if (entry_number * Cpu::Ldt_entry_size + size > Config::PAGE_SIZE)
+          if (entry_number >= Config::PAGE_SIZE / Cpu::Ldt_entry_size
+              || entry_number * Cpu::Ldt_entry_size + size > Config::PAGE_SIZE)
             {
               WARN("set_ldt: LDT size exceeds one page, not supported.\n");
               tag = commit_result(-L4_err::EInval);
