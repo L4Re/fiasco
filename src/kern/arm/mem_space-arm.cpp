@@ -935,8 +935,8 @@ Mem_space::init_page_sizes()
   add_page_size(Page_order(Config::PAGE_SHIFT));
   add_page_size(Page_order(21)); // 2 MiB
   add_page_size(Page_order(30)); // 1 GiB
-  if (Cpubits::Pt4())
-    add_page_size(Page_order(39)); // 512 GiB
+  // No 512 GiB pages: with a 4 KiB translation granule the architecture has no
+  // block descriptor at the top level of a four-level page table.
 }
 
 //-----------------------------------------------------------------------------
