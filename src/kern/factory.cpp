@@ -126,13 +126,13 @@ Factory::map_obj(Kobject_iface *o, Cap_index cap, Task *_c_space,
   auto space_lock_guard = switch_lock_guard(c_space->existence_lock);
   if (!space_lock_guard.is_valid())
     {
-      delete o;
+      o->initiate_deletion(reap_list.list());
       return commit_error(utcb, L4_error(L4_error::Overflow, L4_error::Rcv));
     }
 
   if (!map_obj_initially(o, o_space, c_space.get(), cap, reap_list.list()))
     {
-      delete o;
+      o->initiate_deletion(reap_list.list());
       return commit_result(-L4_err::ENomem);
     }
 
