@@ -350,9 +350,10 @@ public:
 
     if constexpr (ATTRIBS::Priv_levels == 2)
       {
-        // Make kernel mappings never executable by userspace
-        if (!(attr.rights & Page::Rights::U()))
-          lower |= ATTRIBS::UXN;
+        if ((attr.rights & Page::Rights::U()))
+          lower |= ATTRIBS::PXN; // user mappings never executable by kernel
+        else
+          lower |= ATTRIBS::UXN; // kernel mappings never executable by user
       }
 
     if (!(attr.rights & Page::Rights::X()))
@@ -374,8 +375,14 @@ public:
           rights |= Page::Rights::U();
       }
 
-    // Note that Page::UXN (if available) is dependent on Page::Rights::U()!
-    if (!(c & (ATTRIBS::PXN | ATTRIBS::XN)))
+    // Only the XN bit of the privilege level the mapping is intended for
+    // indicates whether it is executable, because _attribs() always sets the
+    // one of the other privilege level. Which one that is, is determined by
+    // Page::Rights::U().
+    Unsigned64 xn = ATTRIBS::XN;
+    if constexpr (ATTRIBS::Priv_levels == 2)
+      xn |= (c & 0x40) ? ATTRIBS::UXN : ATTRIBS::PXN;
+    if (!(c & xn))
       rights |= Page::Rights::X();
 
     Page::Type type;
