@@ -478,7 +478,17 @@ Treemap_ops::grant(Treemap *submap, Space *old_space,
     }
 }
 
-
+/**
+ * Flush a partial range of mappings from treemap.
+ *
+ * \param submap      Treemap to flush mappings from.
+ * \param offs_begin  Begin of range of mappings to flush, relative to start of
+ *                    `submap`.
+ * \param offs_end    End of range (exclusive) of mappings to flush, relative to
+ *                    start of `submap`.
+ *
+ * \pre offs_end <= submap->end()
+ */
 PUBLIC inline NEEDS["mapping_tree.h"]
 void
 Treemap_ops::flush(Treemap *submap,
