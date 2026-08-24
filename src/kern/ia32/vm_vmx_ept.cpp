@@ -136,6 +136,9 @@ private:
       return Attr(r, t, Page::Kern::None(), Page::Flags::None());
     }
 
+    bool needs_tlb_flush_on_upgrade(Attr attr) const
+    { return attribs().type != attr.type; }
+
     Unsigned64 entry() const { return *e; }
 
     void set_next_level(Unsigned64 phys)
@@ -332,7 +335,11 @@ Vm_vmx_ept::v_insert(Mem_space::Phys_addr phys, Mem_space::Vaddr virt,
         return Mem_space::Insert_warn_exists;
 
       i.set_page(entry);
-      return Mem_space::Insert_warn_attrib_upgrade;
+
+      if (i.needs_tlb_flush_on_upgrade(page_attribs))
+        return Mem_space::Insert_warn_attrib_upgrade;
+      else
+        return Mem_space::Insert_warn_exists;
     }
   else
     {

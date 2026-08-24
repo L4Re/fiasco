@@ -45,13 +45,19 @@ public:
     // On Intel CPUs, non-present PTEs are not cached. See below for the
     // behavior on AMD CPUs.
     Need_insert_tlb_flush = 0,
-    // On Intel CPUs, upgrading a PTE without TLB invalidation might result in
-    // at most one "spurious" page-fault exception. On AMD CPUs, the page tables
-    // are re-walked when any type of page fault exception is encountered by the
-    // MMU to avoid the spurious page fault. On both Intel and AMD, the
-    // offending TLB entry is invalidated by the CPU. TLB coherency is thus
-    // eventually restored implicitly.
-    Need_upgrade_tlb_flush = 0,
+    // When upgrading a PTE, a TLB flush is required if the Memory_type of the
+    // mapping changes!
+    // If the Memory_type does **not** change: On Intel CPUs, upgrading a PTE
+    // without TLB invalidation might result in at most one "spurious"
+    // page-fault exception. On AMD CPUs, the page tables are re-walked when any
+    // type of page fault exception is encountered by the MMU to avoid the
+    // spurious page fault. On both Intel and AMD, the offending TLB entry is
+    // invalidated by the CPU. TLB coherency is thus eventually restored
+    // implicitly.
+    // Need_upgrade_tlb_flush=1: The caller receives Insert_warn_attrib_upgrade
+    // if the Memory_type changed (TLB flush required) and Insert_warn_exists
+    // otherwise (no TLB flush required, see above).
+    Need_upgrade_tlb_flush = 1,
     Map_page_size = Config::PAGE_SIZE,
     Page_shift = Config::PAGE_SHIFT,
     Whole_space = MWORD_BITS,
@@ -222,7 +228,11 @@ Mem_space::v_insert(Phys_addr phys, Vaddr virt, Page_order order,
         return Insert_warn_exists;
 
       i.set_page(entry);
-      return Insert_warn_attrib_upgrade;
+
+      if (i.needs_tlb_flush_on_upgrade(page_attribs))
+        return Insert_warn_attrib_upgrade;
+      else
+        return Insert_warn_exists;
     }
   else
     {

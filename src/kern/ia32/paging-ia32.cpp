@@ -175,6 +175,11 @@ Pte_ptr::attribs() const
 
 PUBLIC inline
 bool
+Pte_ptr::needs_tlb_flush_on_upgrade(Page::Attr attr) const
+{ return attribs().type != attr.type; }
+
+PUBLIC inline
+bool
 Pte_ptr::attribs_compatible(Page::Attr attr) const
 {
   Page::Attr cur = attribs();
