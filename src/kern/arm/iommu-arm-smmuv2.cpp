@@ -594,13 +594,28 @@ public:
   void setup_irqs(unsigned const *irqs, unsigned num_irqs, unsigned num_global_irqs);
 
 private:
+  static unsigned init_platform_acpi();
+  static unsigned init_platform_dt();
   static void init_platform();
 };
 
 // ------------------------------------------------------------------
 IMPLEMENTATION [iommu_arm_smmu_v2]:
 
+#include "feature.h"
 #include "panic.h"
+
+KIP_KERNEL_FEATURE("arm,smmu-v2");
+
+IMPLEMENT_DEFAULT static
+unsigned
+Iommu_smmu_v2::init_platform_acpi()
+{ return 0; }
+
+IMPLEMENT_DEFAULT static
+unsigned
+Iommu_smmu_v2::init_platform_dt()
+{ return 0; }
 
 IMPLEMENT
 void
@@ -1144,7 +1159,7 @@ void setup_smmu_v2_irqs_dt(Iommu_smmu_v2 *smmu, Dt::Node n)
 
 }
 
-PRIVATE static
+IMPLEMENT_OVERRIDE static
 unsigned
 Iommu_smmu_v2::init_platform_dt()
 {
@@ -1200,12 +1215,30 @@ Iommu_smmu_v2::init_platform_dt()
   return i;
 }
 
+// ------------------------------------------------------------------
+IMPLEMENTATION [iommu_arm_smmu_v2 && arm_acpi]:
+
+IMPLEMENT_OVERRIDE
+unsigned
+Iommu_smmu_v2::init_platform_acpi()
+{
+  /* Not (yet) implemented */
+  return 0;
+}
+
+// ------------------------------------------------------------------
+IMPLEMENTATION [iommu_arm_smmu_v2 && (dt || arm_acpi)]:
+
+#include "dt.h"
+
 IMPLEMENT static
 void
 Iommu_smmu_v2::init_platform()
 {
   if (Dt::have_fdt())
     init_platform_dt();
+  else
+    init_platform_acpi();
 }
 
 // ------------------------------------------------------------------
