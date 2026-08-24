@@ -667,7 +667,7 @@ Vm_vmx_ept::do_resume_vcpu(Context *ctxt, Vcpu_state *vcpu,
   return 0;
 }
 
-PUBLIC inline NEEDS[Vm_vmx_ept::do_resume_vcpu]
+PUBLIC inline NEEDS[Vm_vmx_ept::do_resume_vcpu, "ipi.h"]
 int
 Vm_vmx_ept::resume_vcpu(Context *ctxt, Vcpu_state *vcpu,
                         [[maybe_unused]] bool user_mode) override
