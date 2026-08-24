@@ -400,7 +400,8 @@ Vm_vmx_ept::operator delete (Vm_vmx_ept *vm, std::destroying_delete_t)
 }
 
 PUBLIC inline
-Vm_vmx_ept::Vm_vmx_ept(Ram_quota *q) : Dyn_castable_class(q)
+Vm_vmx_ept::Vm_vmx_ept(Ram_quota *q)
+: Dyn_castable_class(q), _eptp(0), _ept(nullptr)
 {
   _tlb_type = Tlb_per_cpu_asid;
 }
