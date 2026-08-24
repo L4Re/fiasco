@@ -200,7 +200,7 @@ Thread::copy_ts_to_utcb(Thread *snd, Thread *rcv, L4_fpage::Rights rights)
     auto guard = lock_guard(cpu_lock);
     Utcb *rcv_utcb = rcv->utcb().access();
     Trex *r = reinterpret_cast<Trex *>(rcv_utcb->values);
-    r->s = *ts;
+    ts->copy_for_user(&r->s);
 
     if (rcv_utcb->inherit_fpu() && (rights & L4_fpage::Rights::CS()))
       snd->transfer_fpu(rcv);
