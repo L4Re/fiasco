@@ -600,7 +600,7 @@ Vm_vmx_ept::vm_entry(Trex *regs, Vmx_vm_state_t<HOST_STATE> *vm_state,
   return ret;
 }
 
-PRIVATE inline
+PRIVATE inline NEEDS[Vm_vmx_ept::vm_entry, "thread.h"]
 int
 Vm_vmx_ept::do_resume_vcpu(Context *ctxt, Vcpu_state *vcpu,
                            Vmx_vm_state *vm_state)
@@ -667,7 +667,7 @@ Vm_vmx_ept::do_resume_vcpu(Context *ctxt, Vcpu_state *vcpu,
   return 0;
 }
 
-PUBLIC inline
+PUBLIC inline NEEDS[Vm_vmx_ept::do_resume_vcpu]
 int
 Vm_vmx_ept::resume_vcpu(Context *ctxt, Vcpu_state *vcpu,
                         [[maybe_unused]] bool user_mode) override
