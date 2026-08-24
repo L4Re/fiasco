@@ -475,7 +475,7 @@ Vm_vmx_ept::init()
     add_page_size(Mem_space::Page_order(30));
 }
 
-PRIVATE inline NEEDS[Vm_vmx_ept::safe_host_segments,
+PRIVATE inline NEEDS[Vm_vmx_ept::save_host_segments,
                      Vm_vmx_ept::load_guest_msrs,
                      Vm_vmx_ept::store_guest_restore_host_msrs]
 template<Host_state HOST_STATE>
@@ -517,7 +517,7 @@ Vm_vmx_ept::vm_entry(Trex *regs, Vmx_vm_state_t<HOST_STATE> *vm_state,
     Vmx::vmcs_write<Vmx::Vmcs_host_ia32_perf_global_ctrl>(
                                          Cpu::rdmsr(Msr::Ia32_perf_global_ctrl));
 
-  safe_host_segments();
+  save_host_segments();
 
   if (Vmx::vmx_failure()) [[unlikely]]
     return 1;
@@ -786,7 +786,7 @@ IMPLEMENTATION [vmx && amd64]:
 
 PRIVATE inline
 void
-Vm_vmx_ept::safe_host_segments()
+Vm_vmx_ept::save_host_segments()
 {
   /* we can optimize GS and FS handling based on the assuption that
    * FS and GS do not change often for the host / VMM */
@@ -862,7 +862,7 @@ IMPLEMENTATION [vmx && !amd64]:
 
 PRIVATE inline
 void
-Vm_vmx_ept::safe_host_segments()
+Vm_vmx_ept::save_host_segments()
 {
   /* GS and FS are handled via push/pop in asm code */
 }
