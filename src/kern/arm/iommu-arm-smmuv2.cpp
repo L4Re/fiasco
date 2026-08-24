@@ -30,11 +30,10 @@ class Iommu_smmu_v2 : public Iommu
 public:
   enum
   {
-    // Use the AArch64 page table format with a 40-bit virtual address space if
-    // all SMMUs are MMU-500 class and the kernel is 64-bit, otherwise use the
-    // LPAE page table format with a 32-bit virtual address space. SMMU-400 does
-    // not implement the AArch64 format.
-    Va64_support = TAG_ENABLED(iommu_arm_smmu_v2_va64),
+    // Tie the page table format to the kernel execution mode. SMMU-500
+    // supports both LPAE and AArch64 page table formats. SMMU-400 does not
+    // implement the AArch64 format but it is only used on 32 bit platforms.
+    Va64_support = TAG_ENABLED(bit64),
     Virt_addr_size = Va64_support ? 40 : 32,
     Phys_addr_size = 40,
   };
