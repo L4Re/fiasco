@@ -72,7 +72,7 @@ Dmar_space_smmu_v2::free_pt(Ram_quota *ram_quota)
   _dmarpt = nullptr;
 }
 
-PUBLIC static inline
+PUBLIC static constexpr
 void
 Dmar_space_smmu_v2::init_page_sizes(auto add_page_size)
 {
