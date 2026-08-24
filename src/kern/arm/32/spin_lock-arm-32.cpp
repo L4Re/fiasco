@@ -17,9 +17,15 @@ Spin_lock<Lock_t>::lock_arch()
 {
   Lock_t dummy, tmp;
 
+#ifdef CONFIG_ARM_MPCORE
+#define PREFETCH_LOCK
+#else
+#define PREFETCH_LOCK "pldw %[lock] \n"
+#endif
+
 #define LOCK_ARCH(z) \
   __asm__ __volatile__ ( \
-      "   pldw %[lock]                       \n" \
+      PREFETCH_LOCK                              \
       "1: ldrex"#z"   %[d], %[lock]          \n" \
       "   tst     %[d], #2                   \n" /* Arch_lock == #2 */ \
       "   wfene                              \n" \
@@ -41,6 +47,7 @@ Spin_lock<Lock_t>::lock_arch()
   Mem::mp_acquire();
 
 #undef LOCK_ARCH
+#undef PREFETCH_LOCK
 }
 
 IMPLEMENT template<typename Lock_t> inline
