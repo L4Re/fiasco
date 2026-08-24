@@ -36,9 +36,21 @@ Trap_state::copy_and_sanitize(Trap_state const *src)
 //-----------------------------------------------------------------
 IMPLEMENTATION:
 
+#include "mem.h"
 #include "mem_layout.h"
 
 #include <cstdio>
+
+IMPLEMENT inline NEEDS["mem.h"]
+void
+Trap_state::copy_for_user(Trap_state *dst) const
+{
+  // copy pf_address, esr, r0..r12, usp, ulr / omit km_lr
+  Mem::memcpy_mwords(dst, this, 17);
+  dst->km_lr = 0;
+  dst->pc = pc;
+  dst->psr = psr;
+}
 
 IMPLEMENT inline
 void

@@ -14,6 +14,24 @@ public:
 //----------------------------------------------------------------------------
 IMPLEMENTATION:
 
+#include "mem.h"
+
+IMPLEMENT inline NEEDS["mem.h"]
+void
+Trap_state::copy_for_user(Trap_state *dst) const
+{
+  // copy bad_instr_p, bad_instr, r1..r31, hi, lo, bad_v_addr, cause, status,
+  // epc / omit r[0], which holds a pending continuation (see eret_work())
+  dst->bad_instr_p = bad_instr_p;
+  dst->bad_instr = bad_instr;
+  dst->r[0] = 0;
+  Mem::memcpy_mwords(&dst->r[1], &r[1], 31u + 2u);
+  dst->bad_v_addr = bad_v_addr;
+  dst->cause = cause;
+  dst->status = status;
+  dst->epc = epc;
+}
+
 IMPLEMENT inline
 void
 Trex::set_ipc_upcall()

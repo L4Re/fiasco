@@ -266,7 +266,8 @@ Entry_frame::dump(bool extended) const
 IMPLEMENTATION [riscv && !cpu_virt]:
 
 PUBLIC inline void Entry_frame::init_hstatus() {}
-PUBLIC inline void Entry_frame::copy_hstatus(Return_frame const *) {}
+PUBLIC inline void Entry_frame::copy_hstatus(Return_frame const *)
+{ _reserved = 0; }
 PUBLIC inline void Entry_frame::copy_and_sanitize_hstatus(Entry_frame const *) {}
 
 //---------------------------------------------------------------------------

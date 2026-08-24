@@ -1006,7 +1006,8 @@ Thread::send_exception(Trap_state *ts)
           l->err = ts->error();
           l->space = vcpu_user_space() ? static_cast<Task*>(vcpu_user_space())->dbg_id() : ~0;
           );
-      vcpu->_regs.s = *ts;
+
+      ts->copy_for_user(&vcpu->_regs.s);
       vcpu_return_to_kernel(vcpu->_entry_ip, vcpu->_sp, vcpu_state().usr().get());
     }
 

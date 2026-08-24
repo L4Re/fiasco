@@ -15,6 +15,7 @@ public:
 //----------------------------------------------------------------------------
 IMPLEMENTATION:
 
+#include "mem.h"
 #include "mem_layout.h"
 
 #include <cstdio>
@@ -24,6 +25,20 @@ void
 Trex::set_ipc_upcall()
 { s.esr.ec() = 0x3f; }
 
+IMPLEMENT inline NEEDS["mem.h"]
+void
+Trap_state::copy_for_user(Trap_state *dst) const
+{
+  // copy r0..r30, esr, pf_address, usp, pc, pstate / omit eret_work, _ksp
+  dst->eret_work = 0;
+  Mem::memcpy_mwords(&dst->r[0], &r[0], 31);
+  dst->_ksp = 0;
+  dst->esr = esr;
+  dst->pf_address = pf_address;
+  dst->usp = usp;
+  dst->pc = pc;
+  dst->pstate = pstate;
+}
 
 IMPLEMENT inline
 bool

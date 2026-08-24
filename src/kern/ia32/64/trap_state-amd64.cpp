@@ -81,6 +81,14 @@ Trap_state::Handler Trap_state::base_handler FIASCO_FASTCALL;
 
 IMPLEMENT inline
 void
+Trap_state::copy_for_user(Trap_state *dst) const
+{
+  // The trap state consists of user state only.
+  *dst = *this;
+}
+
+IMPLEMENT inline
+void
 Trex::set_ipc_upcall()
 {
   s._err = 0;

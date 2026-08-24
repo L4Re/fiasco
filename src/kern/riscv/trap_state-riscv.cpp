@@ -14,6 +14,22 @@ static_assert(sizeof(Trex) / sizeof(Mword) == L4_exception_ipc::Msg_size,
 //----------------------------------------------------------------------------
 IMPLEMENTATION:
 
+#include "mem.h"
+
+IMPLEMENT inline NEEDS["mem.h"]
+void
+Trap_state::copy_for_user(Trap_state *dst) const
+{
+  // copy regs, pc, status, cause, tval, hstatus / omit eret_work
+  dst->eret_work = 0;
+  Mem::memcpy_mwords(&dst->regs[0], &regs[0], cxx::size(regs));
+  dst->_pc = _pc;
+  dst->status = status;
+  dst->cause = cause;
+  dst->tval = tval;
+  dst->copy_hstatus(this);
+}
+
 IMPLEMENT inline
 void
 Trex::set_ipc_upcall()
