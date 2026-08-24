@@ -42,6 +42,7 @@ config PF_ARM_GEN_SELECT_SMMU_500
 config PF_ARM_GEN_SELECT_SMMU_V3
 	bool "Support SMMUv3" if PF_ARM_GEN_SELECT_SUPPORT
 	default y
+	depends on BIT64
 	select HAS_IOMMU_ARM_SMMU_V3
 
 config ARM_IOMMU_MAX
