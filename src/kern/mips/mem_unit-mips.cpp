@@ -270,7 +270,7 @@ Mem_unit::tlb_write(Mword v_entry_hi, Mword v_entry_lo0,
 
 /**
  * Read (root) TLB entry at the given `index` and return `EntryHi`.
- * \param  index  The index of the TLB entry that shall be red.
+ * \param  index  The index of the TLB entry that shall be read.
  * \return Value of CP0 `EntryHi` register.
  * \pre `index` must be a valid index.
  * \pre The `TLBR` instruction must be supported.
