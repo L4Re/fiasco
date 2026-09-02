@@ -109,6 +109,12 @@ private:
    * value from the last receive operation (see also `Receiver::in_ipc()`).
    *
    * Must never be dereferenced, only compared.
+   *
+   * Read/written using atomic_load()/atomic_store() at the one call site
+   * (set_partner() / sender_ok_heuristic()) where it may be accessed from a
+   * CPU other than the receiver's home CPU without going through a DRQ.
+   * All other accesses happen on the receiver's home CPU (or in a DRQ
+   * targeted at it) and can stay plain reads.
    */
   void const *_partner;
 
@@ -557,13 +563,16 @@ bool Receiver::prepared() const
  *      Receiver's state, e.g. on the Receiver's home CPU or in a DRQ targeted
  *      at the Receiver.
  *
+ * \note The store is atomic because `sender_ok_heuristic()` may read
+ *       `_partner` concurrently from another CPU, without a DRQ.
+ *
  * \param partner IPC partner
  */
 PUBLIC inline
 void
 Receiver::set_partner(Sender* partner)
 {
-  _partner = partner;
+  atomic_store(&_partner, static_cast<void const *>(partner));
 }
 
 /**
@@ -642,12 +651,17 @@ Receiver::sender_ok_heuristic(Sender const *sender) const
       return Rcv_state::Not_receiving;
     }
 
+  // _partner is read atomically because this function may run on a CPU
+  // other than the receiver's home CPU, concurrently with set_partner()
+  // running (via a DRQ) on the receiver's home CPU.
+  void const *partner = atomic_load(&_partner);
+
   // Check open wait; test if there are no other senders already in the queue
-  if (!_partner && _sender_list.empty()) [[likely]]
+  if (!partner && _sender_list.empty()) [[likely]]
     return Rcv_state::Ipc_open_wait;
 
   // Check closed wait; test if this sender is really who we specified
-  if (sender == _partner) [[likely]]
+  if (sender == partner) [[likely]]
     return Rcv_state::Ipc_receive;
 
   return Rcv_state::Not_receiving;
